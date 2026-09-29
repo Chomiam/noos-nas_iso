@@ -19,9 +19,15 @@
   isoImage.makeUsbBootable = true;
   boot.zfs.forceImportRoot = false;
 
-  # Réseau
+  # Pilotes réseau Realtek 2.5GbE (RTL8125), Intel (igc, e1000e) et firmwares
+  boot.kernelModules = [ "r8169" "igc" "e1000e" ];
+  hardware.enableRedistributableFirmware = true;
+
+  # Réseau : DHCP automatique sur TOUTES les interfaces via dhcpcd (comme sur le NAS installé)
   networking.hostName = "steveos-installer";
-  networking.useDHCP = lib.mkDefault true;
+  networking.networkmanager.enable = lib.mkForce false;
+  networking.useDHCP = lib.mkForce true;
+  networking.dhcpcd.enable = true;
 
   # Autoriser root sans mot de passe en console pour dépannage éventuel
   users.users.root.initialHashedPassword = "";

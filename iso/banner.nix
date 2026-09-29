@@ -57,6 +57,7 @@ let
 ISSUE_EOF
 
           # Affichage immédiat sur /dev/tty1
+          echo -e "\n\033[1;32m✔ Adresse IP obtenue : http://$IP:8080\033[0m\n" > /dev/tty1 2>/dev/null || true
           cat /etc/issue > /dev/tty1 2>/dev/null || true
         fi
       else
@@ -64,12 +65,11 @@ ISSUE_EOF
           LAST_IP="waiting"
           cat << 'WAIT_EOF' > /dev/tty1 2>/dev/null || true
 
-  \e[1;35m╔══════════════════════════════════════════════════════════════════════════════╗\e[0m
-  \e[1;35m║\e[0m                \e[1;37m🚀 STEvE_OS NAS Edition — Installateur Réseau\e[0m                 \e[1;35m║\e[0m
-  \e[1;35m╚══════════════════════════════════════════════════════════════════════════════╝\e[0m
-
-    \e[1;33m⏳ En attente de l'attribution d'une adresse IP par votre box (DHCP)...\e[0m
-    Veuillez brancher un câble réseau Ethernet à votre NAS.
+================================================================================
+  [!] STEvE_OS NAS Edition : En attente d'une adresse IP réseau (DHCP)...
+      - Branchez un câble Ethernet à votre box ou switch.
+      - Si votre NAS possède 2 ports Ethernet, essayez le second port.
+================================================================================
 
 WAIT_EOF
         fi
