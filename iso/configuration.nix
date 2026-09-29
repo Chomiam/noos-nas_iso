@@ -16,14 +16,14 @@ in
   # Remplacement des mentions du système d'exploitation par STEvE_OS
   system.nixos.distroName = "STEvE_OS";
   system.nixos.distroId = "steveos";
-  system.nixos.label = "nas edition";
+  system.nixos.label = "";
   system.nixos.vendorName = "STEvE_OS Project";
   system.nixos.vendorId = "steveos";
   system.nixos.variantName = "NAS Edition";
 
   # Libellé du menu de boot : "STEvE_OS nas edition installer"
   isoImage.prependToMenuLabel = "";
-  isoImage.appendToMenuLabel = " installer";
+  isoImage.appendToMenuLabel = "nas edition installer";
 
   # Thème de Bootloader GRUB Catppuccin Mocha personnalisé avec logo STEvE_OS
   isoImage.grubTheme = steveos-grub-theme;
