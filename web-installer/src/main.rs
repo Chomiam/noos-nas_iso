@@ -1,3 +1,4 @@
+mod updates;
 mod disks;
 mod install;
 
@@ -40,6 +41,8 @@ async fn main() {
         .route("/api/install/stream", get(install_stream))
         .route("/api/reboot", post(trigger_reboot))
         .route("/api/network", get(get_network_info))
+        .route("/api/update/check", get(check_update_route))
+        .route("/api/update/apply", post(apply_update_route))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -240,4 +243,15 @@ async fn trigger_reboot() -> Json<GenericResponse> {
         ok: true,
         message: "Redémarrage initié. Le NAS redémarrera dans 3 secondes.".into(),
     })
+}
+
+async fn check_update_route() -> Json<updates::UpdateCheckResponse> {
+    Json(updates::check_for_updates().await)
+}
+
+async fn apply_update_route() -> Response {
+    match updates::apply_self_update().await {
+        Ok(msg) => (StatusCode::OK, Json(GenericResponse { ok: true, message: msg })).into_response(),
+        Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, Json(GenericResponse { ok: false, message: err })).into_response(),
+    }
 }

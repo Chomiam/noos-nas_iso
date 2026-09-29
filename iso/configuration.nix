@@ -1,10 +1,16 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, self ? null, ... }:
 
 {
   imports = [
     ./banner.nix
     ./installer-service.nix
   ];
+
+  # Empreinte du commit ISO pour vérification des mises à jour en ligne
+  environment.etc."steveos-iso-commit".text =
+    if self != null && self ? rev then self.rev
+    else if self != null && self ? dirtyRev then self.dirtyRev
+    else "b870c77b9c614da03252827c616159db287167ef";
 
   # Paramètres de l'image ISO
   image.fileName = lib.mkForce "steveos-nas-installer.iso";

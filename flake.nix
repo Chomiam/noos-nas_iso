@@ -13,6 +13,7 @@
       # Configuration du système ISO
       isoConfig = nixpkgs.lib.nixosSystem {
         inherit system;
+        specialArgs = { inherit inputs self; };
         modules = [
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
           ./iso/configuration.nix

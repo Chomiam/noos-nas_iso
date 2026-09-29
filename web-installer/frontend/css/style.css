@@ -771,3 +771,110 @@ body {
   justify-content: center;
   color: var(--subtext0);
 }
+
+/* Update Modal Overlay */
+.update-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 17, 27, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  transition: opacity 0.3s ease;
+}
+
+.update-modal-card {
+  background: var(--base);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 32px 28px;
+  max-width: 480px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  animation: modalPop 0.3s ease-out;
+}
+
+@keyframes modalPop {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.update-icon-wrapper {
+  width: 64px;
+  height: 64px;
+  background: var(--mantle);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.update-icon {
+  font-size: 2rem;
+}
+
+.update-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.update-desc {
+  font-size: 0.88rem;
+  color: var(--subtext0);
+  line-height: 1.4;
+}
+
+.update-commits-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--mantle);
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.commit-pill {
+  color: var(--subtext1);
+}
+
+.commit-remote {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.commit-arrow {
+  color: var(--mauve);
+}
+
+.btn-update-status {
+  background: var(--surface0);
+  border: 1px solid var(--border);
+  color: var(--subtext1);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.btn-update-status:hover {
+  background: var(--surface1);
+  border-color: var(--mauve);
+  color: var(--text);
+}

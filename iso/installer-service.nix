@@ -9,10 +9,21 @@ let
       lockFile = ../web-installer/Cargo.lock;
     };
   };
+
+  steveos-web-installer-wrapper = pkgs.writeShellScriptBin "steveos-web-installer-wrapper" ''
+    if [ -x "/run/current-web-installer/bin/steveos-web-installer" ]; then
+      echo "[steveos-installer] Démarrage de la version mise à jour (/run/current-web-installer)..."
+      exec /run/current-web-installer/bin/steveos-web-installer
+    else
+      echo "[steveos-installer] Démarrage de la version embarquée dans l'ISO..."
+      exec ${steveos-web-installer}/bin/steveos-web-installer
+    fi
+  '';
 in
 {
   environment.systemPackages = [
     steveos-web-installer
+    steveos-web-installer-wrapper
     pkgs.git
     pkgs.btrfs-progs
     pkgs.e2fsprogs
@@ -23,6 +34,7 @@ in
     pkgs.nixos-install-tools
     pkgs.nettools
     pkgs.hostname
+    pkgs.nix
   ];
 
   networking.firewall.allowedTCPPorts = [ 8080 22 ];
@@ -49,7 +61,7 @@ in
     ];
     serviceConfig = {
       Type = "simple";
-      ExecStart = "${steveos-web-installer}/bin/steveos-web-installer";
+      ExecStart = "${steveos-web-installer-wrapper}/bin/steveos-web-installer-wrapper";
       Restart = "always";
       RestartSec = 3;
       StandardOutput = "journal";

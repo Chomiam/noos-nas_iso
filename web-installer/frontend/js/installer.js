@@ -5,12 +5,152 @@ let currentIp = "127.0.0.1";
 let sseSource = null;
 let pollTimer = null;
 let countdownTimer = null;
+let isUpdating = false;
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchNetworkInfo();
+  checkUpdates(false);
   loadDisks();
   checkCurrentStatus();
 });
+
+async function checkUpdates(manual = false) {
+  const modal = document.getElementById("update-modal");
+  const spinner = document.getElementById("update-spinner");
+  const iconDone = document.getElementById("update-icon-done");
+  const iconWarn = document.getElementById("update-icon-warn");
+  const title = document.getElementById("update-title");
+  const desc = document.getElementById("update-desc");
+  const commitsBox = document.getElementById("update-commits-box");
+  const btnApply = document.getElementById("update-actions");
+  const statusText = document.getElementById("update-status-text");
+
+  if (manual && modal) {
+    modal.style.display = "flex";
+    modal.style.opacity = "1";
+    spinner.style.display = "block";
+    iconDone.style.display = "none";
+    iconWarn.style.display = "none";
+    commitsBox.style.display = "none";
+    btnApply.style.display = "none";
+    title.textContent = "Vérification des mises à jour...";
+    desc.textContent = "Interrogation du dépôt GitHub Chomiam/steveos-nas_iso...";
+  }
+
+  try {
+    const res = await fetch("/api/update/check");
+    if (!res.ok) throw new Error("Erreur HTTP lors de la vérification");
+    const data = await res.json();
+
+    if (data.update_available) {
+      if (modal) {
+        modal.style.display = "flex";
+        modal.style.opacity = "1";
+        spinner.style.display = "none";
+        iconWarn.style.display = "block";
+        title.textContent = "Mise à jour disponible !";
+        desc.textContent = "Une nouvelle version de l'installateur a été détectée sur GitHub. Mise à jour et redémarrage automatique en cours...";
+        
+        document.getElementById("commit-current").textContent = data.current_short;
+        document.getElementById("commit-remote").textContent = data.remote_short;
+        commitsBox.style.display = "flex";
+        btnApply.style.display = "none";
+      }
+
+      if (statusText) statusText.textContent = `MàJ : ${data.current_short} ➔ ${data.remote_short}`;
+
+      // Lancement automatique de la mise à jour
+      setTimeout(() => {
+        applyUpdate();
+      }, 1000);
+
+    } else {
+      if (statusText) statusText.textContent = `À jour (${data.current_short})`;
+
+      if (modal && modal.style.display !== "none") {
+        spinner.style.display = "none";
+        iconDone.style.display = "block";
+        title.textContent = "Installateur à jour";
+        desc.textContent = data.message || "Vous disposez de la dernière version du dépôt steveos-nas_iso.";
+        
+        setTimeout(() => {
+          modal.style.opacity = "0";
+          setTimeout(() => { modal.style.display = "none"; }, 300);
+        }, 1200);
+      }
+    }
+  } catch (err) {
+    console.warn("Update check failed:", err);
+    if (statusText) statusText.textContent = "MàJ : Hors-ligne";
+
+    if (modal && modal.style.display !== "none") {
+      spinner.style.display = "none";
+      iconWarn.style.display = "block";
+      title.textContent = "Vérification hors-ligne";
+      desc.textContent = "Impossible de contacter GitHub pour vérifier les mises à jour. Poursuite de l'installation avec la version embarquée.";
+      
+      setTimeout(() => {
+        modal.style.opacity = "0";
+        setTimeout(() => { modal.style.display = "none"; }, 300);
+      }, 1500);
+    }
+  }
+}
+
+async function applyUpdate() {
+  if (isUpdating) return;
+  isUpdating = true;
+
+  const modal = document.getElementById("update-modal");
+  const spinner = document.getElementById("update-spinner");
+  const iconDone = document.getElementById("update-icon-done");
+  const iconWarn = document.getElementById("update-icon-warn");
+  const title = document.getElementById("update-title");
+  const desc = document.getElementById("update-desc");
+  const btnApply = document.getElementById("update-actions");
+
+  if (modal) {
+    modal.style.display = "flex";
+    modal.style.opacity = "1";
+    spinner.style.display = "block";
+    iconDone.style.display = "none";
+    iconWarn.style.display = "none";
+    btnApply.style.display = "none";
+    title.textContent = "Mise à jour en cours...";
+    desc.textContent = "Téléchargement, compilation de la nouvelle version et redémarrage de l'installateur...";
+  }
+
+  try {
+    const res = await fetch("/api/update/apply", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.message || "Échec de l'application de la mise à jour");
+    }
+
+    desc.textContent = "Redémarrage du service en cours... Rechargement automatique de la page...";
+    
+    // Attendre 3 secondes puis poller le serveur jusqu'à ce qu'il réponde
+    setTimeout(() => {
+      const reloadInterval = setInterval(async () => {
+        try {
+          const check = await fetch("/api/network", { cache: "no-store" });
+          if (check.ok) {
+            clearInterval(reloadInterval);
+            window.location.reload();
+          }
+        } catch {
+          // Serveur en cours de redémarrage
+        }
+      }, 1500);
+    }, 3000);
+
+  } catch (err) {
+    isUpdating = false;
+    alert("Erreur de mise à jour : " + err.message);
+    if (modal) modal.style.display = "none";
+  }
+}
+
 
 async function fetchNetworkInfo() {
   try {

@@ -17,13 +17,41 @@
           <p class="header-subtitle">Installateur Réseau Headless</p>
         </div>
       </div>
-      <div class="header-right">
+      <div class="header-right" style="display: flex; gap: 10px; align-items: center;">
+        <button type="button" class="btn-update-status" id="btn-update-status" onclick="checkUpdates(true)">
+          <span>🔄</span> <span id="update-status-text">MàJ : Vérification...</span>
+        </button>
         <div class="status-pill">
           <span class="status-dot"></span>
           <span id="header-ip-badge">Connexion en cours...</span>
         </div>
       </div>
     </header>
+
+    <!-- Overlay de vérification / application des mises à jour au démarrage -->
+    <div id="update-modal" class="update-modal-overlay" style="display: flex;">
+      <div class="update-modal-card">
+        <div class="update-icon-wrapper" id="update-icon-box">
+          <div class="spinner" id="update-spinner"></div>
+          <div class="update-icon" id="update-icon-done" style="display: none;">✅</div>
+          <div class="update-icon" id="update-icon-warn" style="display: none;">⚡</div>
+        </div>
+        <h3 class="update-title" id="update-title">Vérification des mises à jour...</h3>
+        <p class="update-desc" id="update-desc">Recherche d'une nouvelle version sur le dépôt officiel steveos-nas_iso...</p>
+        
+        <div class="update-commits-info" id="update-commits-box" style="display: none;">
+          <span class="commit-pill" id="commit-current">...</span>
+          <span class="commit-arrow">➔</span>
+          <span class="commit-pill commit-remote" id="commit-remote">...</span>
+        </div>
+
+        <div class="update-actions" id="update-actions" style="display: none; margin-top: 8px;">
+          <button type="button" class="btn-primary" id="btn-apply-update" onclick="applyUpdate()">
+            ⚡ Mettre à jour et redémarrer
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Main Content Area -->
     <main class="main-content">
