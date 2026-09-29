@@ -112,6 +112,7 @@ pub async fn apply_self_update() -> Result<String, String> {
     let mut cmd = Command::new("nix");
     cmd.args([
         "build",
+        "--refresh",
         "github:Chomiam/steveos-nas_iso#web-installer",
         "--out-link",
         "/run/current-web-installer",
