@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STEvE_OS NAS Edition — Installateur Réseau</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo-badge">🚀</div>
+        <div>
+          <h1 class="header-title">STEvE_OS NAS Edition</h1>
+          <p class="header-subtitle">Installateur Réseau Headless</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span id="header-ip-badge">Connexion en cours...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <div class="installer-card" id="form-card">
+        
+        <!-- Section 1 : Utilisateur & Sécurité -->
+        <section class="section">
+          <div class="section-header">
+            <span class="section-step">1</span>
+            <div>
+              <h2 class="section-title">Compte Administrateur</h2>
+              <p class="section-desc">Créez le compte d'administration principal du NAS.</p>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label for="username" class="form-label">
+                Nom d'utilisateur <span class="required">*</span>
+              </label>
+              <div class="input-wrapper">
+                <input type="text" id="username" class="form-input font-mono" placeholder="ex: admin_nas, chomiam" autocomplete="off" oninput="checkUsernameLive()">
+                <span class="validation-icon" id="user-val-icon"></span>
+              </div>
+              <div class="input-hint" id="user-hint">
+                Minuscules (a-z), chiffres (0-9), tiret (-) et souligné (_). Pas d'espaces ni d'accents.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="hostname" class="form-label">
+                Nom de machine (Hostname)
+              </label>
+              <div class="input-wrapper">
+                <input type="text" id="hostname" class="form-input font-mono" value="steveos-nas" placeholder="steveos-nas">
+              </div>
+              <div class="input-hint">Nom du NAS sur votre réseau local.</div>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top: 12px;">
+            <div class="form-group">
+              <label for="password" class="form-label">
+                Mot de passe <span class="required">*</span>
+              </label>
+              <div class="input-wrapper">
+                <input type="password" id="password" class="form-input" placeholder="••••••••" oninput="checkPasswordMatch()">
+                <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('password', this)">👁️</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="password-confirm" class="form-label">
+                Confirmer le mot de passe <span class="required">*</span>
+              </label>
+              <div class="input-wrapper">
+                <input type="password" id="password-confirm" class="form-input" placeholder="••••••••" oninput="checkPasswordMatch()">
+                <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('password-confirm', this)">👁️</button>
+              </div>
+              <div class="input-hint" id="pwd-hint"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 2 : Sélection du Disque Système -->
+        <section class="section">
+          <div class="section-header">
+            <span class="section-step">2</span>
+            <div>
+              <h2 class="section-title">Disque d'Installation du Système</h2>
+              <p class="section-desc">Sélectionnez le disque interne sur lequel installer le système d'exploitation.</p>
+            </div>
+            <button type="button" class="btn-refresh" onclick="loadDisks()" title="Actualiser la liste des disques">🔄 Rafraîchir</button>
+          </div>
+
+          <div id="disks-container" class="disks-list">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <span>Détection des disques disponibles...</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 3 : Système de fichiers & Note informative -->
+        <section class="section">
+          <div class="section-header">
+            <span class="section-step">3</span>
+            <div>
+              <h2 class="section-title">Système de Fichiers & Stockage</h2>
+              <p class="section-desc">Format de la partition racine pour STEvE_OS NAS.</p>
+            </div>
+          </div>
+
+          <div class="fs-options-grid">
+            <label class="fs-card selected" onclick="selectFilesystem('btrfs', this)">
+              <input type="radio" name="filesystem" value="btrfs" checked style="display: none;">
+              <div class="fs-card-header">
+                <span class="fs-title">Btrfs</span>
+                <span class="badge badge-recommended">Recommandé</span>
+              </div>
+              <p class="fs-desc">
+                Sous-volumes optimisés (<code>@</code>, <code>@home</code>, <code>@nix</code>), compression native zstd et support des snapshots instantanés.
+              </p>
+            </label>
+
+            <label class="fs-card" onclick="selectFilesystem('ext4', this)">
+              <input type="radio" name="filesystem" value="ext4" style="display: none;">
+              <div class="fs-card-header">
+                <span class="fs-title">Ext4</span>
+                <span class="badge badge-standard">Classique</span>
+              </div>
+              <p class="fs-desc">
+                Système de fichiers Linux standard, simple, éprouvé et d'une grande stabilité.
+              </p>
+            </label>
+          </div>
+
+          <!-- Note informatique obligatoire -->
+          <div class="info-callout">
+            <div class="info-icon">💡</div>
+            <div class="info-content">
+              <strong>Gestion du stockage et Pools RAID :</strong><br>
+              Ce disque est réservé exclusivement au système d'exploitation STEvE_OS NAS. La configuration de vos disques de stockage de données, la création de vos <strong>pools de stockage</strong> et du <strong>RAID</strong> s'effectueront en toute simplicité <strong>après l'installation</strong>, directement depuis le tableau de bord web STEvE_OS NAS (port <code>9339</code>).
+            </div>
+          </div>
+        </section>
+
+        <!-- Bouton d'action -->
+        <div class="form-actions">
+          <button type="button" id="btn-start-install" class="btn-primary" onclick="confirmAndStartInstall()">
+            🚀 Démarrer l'Installation de STEvE_OS NAS
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Section de Progression & Terminal de Logs -->
+      <div class="installer-card" id="progress-card" style="display: none;">
+        <div class="progress-header">
+          <div class="progress-info">
+            <h2 class="progress-title" id="current-step-title">Installation en cours...</h2>
+            <p class="progress-subtitle" id="current-step-desc">Veuillez patienter pendant la configuration du système.</p>
+          </div>
+          <div class="progress-percentage" id="progress-perc-text">0%</div>
+        </div>
+
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+
+        <!-- Terminal stylisé Catppuccin -->
+        <div class="terminal-window">
+          <div class="terminal-titlebar">
+            <div class="terminal-dots">
+              <span class="dot dot-red"></span>
+              <span class="dot dot-yellow"></span>
+              <span class="dot dot-green"></span>
+            </div>
+            <div class="terminal-title">STEvE_OS NAS — Console d'Installation (Live Output)</div>
+            <div class="terminal-badge" id="terminal-status-badge">ACTIF</div>
+          </div>
+          <div class="terminal-body" id="terminal-body">
+            <div class="term-line term-system">--- Initialisation du flux de logs SSE ---</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Écran de Succès Final -->
+      <div class="installer-card" id="success-card" style="display: none;">
+        <div class="success-banner">
+          <div class="success-icon-wrapper">
+            <div class="success-icon">✨</div>
+          </div>
+          <h2 class="success-title">Installation Réussie !</h2>
+          <p class="success-text">
+            STEvE_OS NAS Edition est maintenant installé sur votre disque système.
+          </p>
+
+          <div class="dashboard-preview-card">
+            <div class="preview-header">
+              <span>🖥️ Accès au Tableau de Bord STEvE_OS NAS</span>
+            </div>
+            <div class="preview-body">
+              <p>Dans quelques instants, votre tableau de bord apparaîtra à l'adresse :</p>
+              <div class="preview-url" id="final-dashboard-url">http://192.168.1.xxx:9339</div>
+              <p class="preview-note">Veuillez débrancher la clé USB d'installation avant le redémarrage.</p>
+            </div>
+          </div>
+
+          <div class="countdown-wrapper">
+            <span>Redémarrage automatique dans <strong id="reboot-countdown">15</strong> secondes...</span>
+          </div>
+
+          <div class="success-actions">
+            <button type="button" class="btn-primary" onclick="rebootNow()">
+              🔄 Redémarrer Maintenant
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span>STEvE_OS NAS Edition — Système de stockage moderne sous NixOS</span>
+    </footer>
+  </div>
+
+  <script src="/js/installer.js"></script>
+</body>
+</html>
