@@ -492,6 +492,7 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
   user = {{
     username = "{}";
     description = "Administrateur STEvE_OS NAS";
+    initialHashedPassword = "{}";
     hashedPassword = "{}";
   }};
 
@@ -517,7 +518,7 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
   }};
 }}
 "#,
-        req.hostname, req.username, password_hash
+        req.hostname, req.username, password_hash, password_hash
     );
 
     let _ = std::fs::write(format!("{}/vars.nix", target_cfg_dir), &vars_content);
