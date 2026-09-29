@@ -152,7 +152,7 @@ pub async fn run_installation(
         let state = Arc::new(Mutex::new(NixProgressState {
             total_items: 0,
             completed_items: 0,
-            current_progress: 75,
+            current_progress: 20,
         }));
 
         async fn handle_line(mgr: &Arc<Mutex<InstallManager>>, state: &Arc<Mutex<NixProgressState>>, raw_line: &str, is_stderr: bool) {
@@ -189,8 +189,8 @@ pub async fn run_installation(
                 };
 
                 let ratio = (s.completed_items as f32 / total as f32).min(1.0);
-                let target_prog = (75.0 + ratio * 20.0).round() as u32;
-                let target_prog = target_prog.clamp(75, 95);
+                let target_prog = (20.0 + ratio * 75.0).round() as u32;
+                let target_prog = target_prog.clamp(20, 95);
 
                 let pkg_name = if let Some(start) = line.find('\'') {
                     if let Some(end) = line[start + 1..].find('\'') {
@@ -299,7 +299,7 @@ pub async fn run_installation(
     }
 
     // 1. Démontage préventif et nettoyage
-    set_step(&manager, "Nettoyage et partitionnement du disque", 15).await;
+    set_step(&manager, "Nettoyage et partitionnement du disque", 5).await;
     log(&manager, "Démontage préventif des anciens points de montage sur /mnt...").await;
     let _ = Command::new("umount").args(["-R", "/mnt"]).status().await;
     let _ = Command::new("swapoff").arg("-a").status().await;
@@ -352,7 +352,7 @@ pub async fn run_installation(
     log(&manager, &format!("Partitions détectées : Boot={} | Racine={}", boot_part, root_part)).await;
 
     // 2. Formatage
-    set_step(&manager, "Formatage des partitions", 30).await;
+    set_step(&manager, "Formatage des partitions", 8).await;
     let _ = Command::new("umount").args(["-f", &boot_part]).status().await;
     let _ = Command::new("umount").args(["-f", &root_part]).status().await;
     log(&manager, &format!("Formatage FAT32 de la partition EFI {}", boot_part)).await;
@@ -373,7 +373,7 @@ pub async fn run_installation(
         }
 
         // Création des sous-volumes Btrfs
-        set_step(&manager, "Création des sous-volumes Btrfs (@, @home, @nix, @snapshots)", 40).await;
+        set_step(&manager, "Création des sous-volumes Btrfs (@, @home, @nix, @snapshots)", 11).await;
         let _ = Command::new("mkdir").args(["-p", "/mnt"]).status().await;
         let _ = Command::new("mount").args(["-t", "btrfs", &root_part, "/mnt"]).status().await;
 
@@ -385,7 +385,7 @@ pub async fn run_installation(
         let _ = Command::new("umount").arg("/mnt").status().await;
 
         // Montage définitif
-        set_step(&manager, "Montage des systèmes de fichiers", 45).await;
+        set_step(&manager, "Montage des systèmes de fichiers", 13).await;
         let _ = Command::new("mount").args(["-o", "subvol=@,compress=zstd,noatime", &root_part, "/mnt"]).status().await;
         let _ = Command::new("mkdir").args(["-p", "/mnt/home", "/mnt/nix", "/mnt/.snapshots", "/mnt/boot"]).status().await;
         let _ = Command::new("mount").args(["-o", "subvol=@home,compress=zstd", &root_part, "/mnt/home"]).status().await;
@@ -401,7 +401,7 @@ pub async fn run_installation(
             return;
         }
 
-        set_step(&manager, "Montage des systèmes de fichiers", 45).await;
+        set_step(&manager, "Montage des systèmes de fichiers", 13).await;
         let _ = Command::new("mkdir").args(["-p", "/mnt"]).status().await;
         let _ = Command::new("mount").args([&root_part, "/mnt"]).status().await;
         let _ = Command::new("mkdir").args(["-p", "/mnt/boot"]).status().await;
@@ -409,7 +409,7 @@ pub async fn run_installation(
     }
 
     // 3. Génération et injection de la configuration NixOS
-    set_step(&manager, "Génération de la configuration matérielle STEvE_OS", 55).await;
+    set_step(&manager, "Génération de la configuration matérielle STEvE_OS", 15).await;
     let mut cmd = Command::new("nixos-generate-config");
     cmd.args(["--root", "/mnt"]);
     if let Err(e) = exec_cmd(manager.clone(), cmd).await {
@@ -417,7 +417,7 @@ pub async fn run_installation(
         return;
     }
 
-    set_step(&manager, "Installation de la configuration STEvE_OS NAS Edition", 65).await;
+    set_step(&manager, "Préparation de la configuration STEvE_OS NAS Edition", 18).await;
     log(&manager, "Copie et personnalisation des fichiers de configuration...").await;
 
     // Préparation de /mnt/etc/nixos (la configuration NixOS est installée DIRECTEMENT dans /etc/nixos/)
@@ -529,7 +529,7 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
     let _ = exec_cmd(manager.clone(), git_add).await;
 
     // 4. Lancement de nixos-install avec le Flake STEvE_OS
-    set_step(&manager, "Compilation et installation du système STEvE_OS", 75).await;
+    set_step(&manager, "Compilation et installation du système STEvE_OS", 20).await;
     log(&manager, "Installation du système STEvE_OS en cours... Cette étape peut prendre quelques minutes.").await;
 
     let mut cmd = Command::new("nixos-install");
