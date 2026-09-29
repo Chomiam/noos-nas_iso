@@ -158,14 +158,20 @@ async function fetchNetworkInfo() {
     if (res.ok) {
       const data = await res.json();
       currentIp = data.ip;
-      document.getElementById("header-ip-badge").textContent = `IP : http://${currentIp}:8080`;
+      const badge = document.getElementById("header-ip-badge");
       const urlPreview = document.getElementById("final-dashboard-url");
-      if (urlPreview) {
-        urlPreview.textContent = `http://${currentIp}:9339`;
+
+      if (currentIp && currentIp !== "127.0.0.1") {
+        if (badge) badge.textContent = `IP : http://${currentIp}:8080`;
+        if (urlPreview) urlPreview.textContent = `http://${currentIp}:9339`;
+      } else {
+        if (badge) badge.textContent = "IP : En attente DHCP...";
+        setTimeout(fetchNetworkInfo, 2000);
       }
     }
   } catch (err) {
     console.error("Failed to load network info", err);
+    setTimeout(fetchNetworkInfo, 3000);
   }
 }
 

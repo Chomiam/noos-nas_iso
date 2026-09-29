@@ -213,15 +213,79 @@ struct NetworkInfo {
     hostname: String,
 }
 
-async fn get_network_info() -> Json<NetworkInfo> {
-    let ip_out = std::process::Command::new("hostname")
-        .arg("-I")
+pub fn get_primary_lan_ip() -> String {
+    // 1. Détection via socket UDP vers 8.8.8.8 (ne transmet aucun paquet, interroge la table de routage du noyau Linux)
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(local_addr) = socket.local_addr() {
+                let ip = local_addr.ip().to_string();
+                if !ip.starts_with("127.") && !ip.starts_with("169.254.") {
+                    return ip;
+                }
+            }
+        }
+    }
+
+    // 2. Détection via ip route get 1.1.1.1
+    if let Ok(output) = std::process::Command::new("ip")
+        .args(["-4", "route", "get", "1.1.1.1"])
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "127.0.0.1".into());
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let parts: Vec<&str> = stdout.split_whitespace().collect();
+            for i in 0..parts.len() {
+                if parts[i] == "src" && i + 1 < parts.len() {
+                    let ip = parts[i + 1].trim();
+                    if !ip.starts_with("127.") && !ip.starts_with("169.254.") {
+                        return ip.to_string();
+                    }
+                }
+            }
+        }
+    }
 
-    let primary_ip = ip_out.split_whitespace().next().unwrap_or("127.0.0.1").to_string();
+    // 3. Détection via ip -4 -o addr show scope global
+    if let Ok(output) = std::process::Command::new("ip")
+        .args(["-4", "-o", "addr", "show", "scope", "global"])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                for part in parts {
+                    if part.contains('/') {
+                        if let Some(ip) = part.split('/').next() {
+                            let ip = ip.trim();
+                            if !ip.starts_with("127.") && !ip.starts_with("169.254.") {
+                                return ip.to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
+    // 4. Détection via hostname -I
+    if let Ok(output) = std::process::Command::new("hostname").arg("-I").output() {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for part in stdout.split_whitespace() {
+                let ip = part.trim();
+                if !ip.is_empty() && !ip.starts_with("127.") && !ip.starts_with("169.254.") {
+                    return ip.to_string();
+                }
+            }
+        }
+    }
+
+    "127.0.0.1".to_string()
+}
+
+async fn get_network_info() -> Json<NetworkInfo> {
+    let primary_ip = get_primary_lan_ip();
     let hostname = std::process::Command::new("hostname")
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
