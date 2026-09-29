@@ -218,7 +218,7 @@ pub async fn run_installation(
     }
 
     // 3. Génération et injection de la configuration NixOS
-    set_step(&manager, "Génération de la configuration matérielle NixOS", 55).await;
+    set_step(&manager, "Génération de la configuration matérielle STEvE_OS", 55).await;
     let mut cmd = Command::new("nixos-generate-config");
     cmd.args(["--root", "/mnt"]);
     if let Err(e) = exec_cmd(manager.clone(), cmd).await {
@@ -303,8 +303,8 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
     log(&manager, "Fichier /mnt/etc/nixos/vars.nix configuré avec succès.").await;
 
     // 4. Lancement de nixos-install
-    set_step(&manager, "Compilation et installation du système (nixos-install)", 75).await;
-    log(&manager, "Exécution de nixos-install... Cette étape peut prendre quelques minutes.").await;
+    set_step(&manager, "Compilation et installation du système STEvE_OS", 75).await;
+    log(&manager, "Installation du système STEvE_OS en cours... Cette étape peut prendre quelques minutes.").await;
 
     let mut cmd = Command::new("nixos-install");
     cmd.args(["--no-root-password", "--impure"]);

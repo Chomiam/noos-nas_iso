@@ -1,0 +1,53 @@
+# STEvE_OS NAS Edition - Catppuccin Mocha GRUB Theme
+# Designed for HD & 4K displays
+
+# Global Properties
+title-text: ""
+desktop-image: "background.png"
+desktop-image-scale-method: "stretch"
+desktop-color: "#1E1E2E"
+terminal-font: "Unifont Regular 16"
+terminal-left: "0"
+terminal-top: "0"
+terminal-width: "100%"
+terminal-height: "100%"
+terminal-border: "0"
+
+# STEvE_OS Logo (420x110)
++ image {
+  left = 50%-210
+  top = 16%
+  width = 420
+  height = 110
+  file = "logo.png"
+}
+
+# Boot Menu
++ boot_menu {
+  left = 50%-300
+  top = 40%
+  width = 600
+  height = 36%
+  item_font = "Unifont Regular 16"
+  item_color = "#CDD6F4"
+  selected_item_color = "#CBA6F7"
+  icon_width = 32
+  icon_height = 32
+  item_icon_space = 16
+  item_height = 42
+  item_padding = 8
+  item_spacing = 8
+  selected_item_pixmap_style = "select_*.png"
+}
+
+# Countdown timer
++ label {
+  top = 82%
+  left = 25%
+  width = 50%
+  align = "center"
+  id = "__timeout__"
+  text = "Démarrage automatique dans %d secondes"
+  color = "#A6ADC8"
+  font = "Unifont Regular 16"
+}

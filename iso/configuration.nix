@@ -1,10 +1,36 @@
 { config, pkgs, lib, self ? null, ... }:
 
+let
+  steveos-grub-theme = pkgs.callPackage ./theme { };
+in
 {
   imports = [
     ./banner.nix
     ./installer-service.nix
   ];
+
+  # =========================================================================
+  # 🎨 BRANDING DE L'IMAGE ISO : STEvE_OS NAS EDITION
+  # =========================================================================
+
+  # Remplacement des mentions du système d'exploitation par STEvE_OS
+  system.nixos.distroName = "STEvE_OS";
+  system.nixos.distroId = "steveos";
+  system.nixos.label = "nas edition";
+  system.nixos.vendorName = "STEvE_OS Project";
+  system.nixos.vendorId = "steveos";
+  system.nixos.variantName = "NAS Edition";
+
+  # Libellé du menu de boot : "STEvE_OS nas edition installer"
+  isoImage.prependToMenuLabel = "";
+  isoImage.appendToMenuLabel = " installer";
+
+  # Thème de Bootloader GRUB Catppuccin Mocha personnalisé avec logo STEvE_OS
+  isoImage.grubTheme = steveos-grub-theme;
+
+  # Fond d'écran de démarrage BIOS (Syslinux/Isolinux) Catppuccin Mocha
+  isoImage.splashImage = ./theme/assets/bios-background.png;
+  isoImage.efiSplashImage = ./theme/assets/background.png;
 
   # Empreinte du commit ISO pour vérification des mises à jour en ligne
   environment.etc."steveos-iso-commit".text =
@@ -23,7 +49,7 @@
   boot.kernelModules = [ "r8169" "igc" "e1000e" ];
   hardware.enableRedistributableFirmware = true;
 
-  # Réseau : DHCP automatique sur TOUTES les interfaces via dhcpcd (comme sur le NAS installé)
+  # Réseau : DHCP automatique sur TOUTES les interfaces via dhcpcd
   networking.hostName = "steveos-installer";
   networking.networkmanager.enable = lib.mkForce false;
   networking.useDHCP = lib.mkForce true;
