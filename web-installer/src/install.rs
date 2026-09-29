@@ -128,8 +128,25 @@ pub async fn run_installation(
         }
     }
 
-    // 1. Partitioning
+    // 1. Démontage préventif et nettoyage
     set_step(&manager, "Nettoyage et partitionnement du disque", 15).await;
+    log(&manager, "Démontage préventif des anciens points de montage sur /mnt...").await;
+    let _ = Command::new("umount").args(["-R", "/mnt"]).status().await;
+    let _ = Command::new("swapoff").arg("-a").status().await;
+
+    // Démontage forcé de toutes les partitions du disque cible
+    if let Ok(entries) = std::fs::read_dir("/dev") {
+        let base_name = req.disk_path.trim_start_matches("/dev/");
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(base_name) && name != base_name {
+                let part_dev = format!("/dev/{}", name);
+                let _ = Command::new("umount").args(["-f", &part_dev]).status().await;
+            }
+        }
+    }
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
     log(&manager, &format!("Effacement des anciennes signatures sur {}", req.disk_path)).await;
     let mut cmd = Command::new("wipefs");
     cmd.args(["-a", "-f", &req.disk_path]);
@@ -141,7 +158,7 @@ pub async fn run_installation(
     let mut cmd = Command::new("sgdisk");
     cmd.args([
         "-Z",
-        "-n", "1:0:+512M", "-t", "1:ef00", "-c", "1:BOOT",
+        "-n", "1:0:+1024M", "-t", "1:ef00", "-c", "1:BOOT",
         "-n", "2:0:0", "-t", "2:8300", "-c", "2:ROOT",
         &req.disk_path,
     ]);
@@ -150,7 +167,9 @@ pub async fn run_installation(
         return;
     }
 
-    let _ = Command::new("udevadm").arg("settle").status().await;
+    log(&manager, "Actualisation des partitions auprès du noyau Linux...").await;
+    let _ = Command::new("partprobe").arg(&req.disk_path).status().await;
+    let _ = Command::new("udevadm").args(["settle"]).status().await;
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     // Détermination des chemins de partition
@@ -164,6 +183,8 @@ pub async fn run_installation(
 
     // 2. Formatage
     set_step(&manager, "Formatage des partitions", 30).await;
+    let _ = Command::new("umount").args(["-f", &boot_part]).status().await;
+    let _ = Command::new("umount").args(["-f", &root_part]).status().await;
     log(&manager, &format!("Formatage FAT32 de la partition EFI {}", boot_part)).await;
     let mut cmd = Command::new("mkfs.vfat");
     cmd.args(["-F", "32", "-n", "BOOT", &boot_part]);
