@@ -128,6 +128,176 @@ pub async fn run_installation(
         }
     }
 
+    // Helper spécialisé pour nixos-install avec calcul dynamique de la progression (75% -> 95%)
+    async fn exec_nixos_install(mgr: Arc<Mutex<InstallManager>>, mut cmd: Command) -> Result<(), String> {
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let err_msg = format!("❌ Erreur d'exécution de nixos-install : {}", e);
+                log(&mgr, &err_msg).await;
+                return Err(err_msg);
+            }
+        };
+
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+
+        struct NixProgressState {
+            total_items: u32,
+            completed_items: u32,
+            current_progress: u32,
+        }
+
+        let state = Arc::new(Mutex::new(NixProgressState {
+            total_items: 0,
+            completed_items: 0,
+            current_progress: 75,
+        }));
+
+        async fn handle_line(mgr: &Arc<Mutex<InstallManager>>, state: &Arc<Mutex<NixProgressState>>, raw_line: &str, is_stderr: bool) {
+            let line = raw_line.trim();
+
+            // Détection du nombre total de paquets annoncés par Nix
+            // ex: "these 18 derivations will be built:"
+            // ex: "these 245 paths will be fetched (312.4 MiB):"
+            if line.contains("derivations will be built") || line.contains("paths will be fetched") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                for (i, p) in parts.iter().enumerate() {
+                    if *p == "these" && i + 1 < parts.len() {
+                        if let Ok(count) = parts[i + 1].parse::<u32>() {
+                            let mut s = state.lock().await;
+                            s.total_items += count;
+                        }
+                    }
+                }
+            }
+
+            let is_build = line.contains("building '");
+            let is_copy = line.contains("copying path '");
+            let is_fetch = line.contains("fetching path '");
+            let is_unpack = line.contains("unpacking '");
+
+            if is_build || is_copy || is_fetch || is_unpack {
+                let mut s = state.lock().await;
+                s.completed_items += 1;
+
+                let total = if s.total_items > 0 {
+                    s.total_items.max(s.completed_items)
+                } else {
+                    120.max(s.completed_items + 5)
+                };
+
+                let ratio = (s.completed_items as f32 / total as f32).min(1.0);
+                let target_prog = (75.0 + ratio * 20.0).round() as u32;
+                let target_prog = target_prog.clamp(75, 95);
+
+                let pkg_name = if let Some(start) = line.find('\'') {
+                    if let Some(end) = line[start + 1..].find('\'') {
+                        let path = &line[start + 1..start + 1 + end];
+                        let file_name = path.rsplit('/').next().unwrap_or(path);
+                        if file_name.len() > 33 && file_name.as_bytes()[32] == b'-' {
+                            file_name[33..].to_string()
+                        } else {
+                            file_name.to_string()
+                        }
+                    } else {
+                        "paquet".to_string()
+                    }
+                } else {
+                    "paquet".to_string()
+                };
+
+                let action = if is_build {
+                    "Compilation"
+                } else if is_copy {
+                    "Copie"
+                } else if is_fetch {
+                    "Téléchargement"
+                } else {
+                    "Dépaquetage"
+                };
+
+                let step_desc = format!(
+                    "{} de {} ({}/{})",
+                    action, pkg_name, s.completed_items, total
+                );
+
+                s.current_progress = target_prog;
+
+                let mut m = mgr.lock().await;
+                m.progress = target_prog;
+                m.step = step_desc.clone();
+                let log_entry = if is_stderr {
+                    format!("[STDERR] {}", raw_line)
+                } else {
+                    raw_line.to_string()
+                };
+                m.add_log(log_entry);
+                m.add_log(format!("[PROGRESS] {}% - {}", target_prog, step_desc));
+                return;
+            }
+
+            if line.contains("setting up /etc") {
+                let mut s = state.lock().await;
+                s.current_progress = 95;
+                let step_desc = "Configuration du système et des services (/etc)";
+                let mut m = mgr.lock().await;
+                m.progress = 95;
+                m.step = step_desc.to_string();
+                m.add_log(format!("[PROGRESS] 95% - {}", step_desc));
+            } else if line.contains("installing the boot loader") || line.contains("installing boot loader") {
+                let mut s = state.lock().await;
+                s.current_progress = 96;
+                let step_desc = "Installation du chargeur de démarrage UEFI (systemd-boot)";
+                let mut m = mgr.lock().await;
+                m.progress = 96;
+                m.step = step_desc.to_string();
+                m.add_log(format!("[PROGRESS] 96% - {}", step_desc));
+            } else if line.contains("installation finished") {
+                let mut s = state.lock().await;
+                s.current_progress = 97;
+                let step_desc = "Installation du système STEvE_OS réussie";
+                let mut m = mgr.lock().await;
+                m.progress = 97;
+                m.step = step_desc.to_string();
+                m.add_log(format!("[PROGRESS] 97% - {}", step_desc));
+            }
+
+            let mut m = mgr.lock().await;
+            if is_stderr {
+                m.add_log(format!("[STDERR] {}", raw_line));
+            } else {
+                m.add_log(raw_line.to_string());
+            }
+        }
+
+        let mgr_out = mgr.clone();
+        let state_out = state.clone();
+        let out_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                handle_line(&mgr_out, &state_out, &line, false).await;
+            }
+        });
+
+        let mgr_err = mgr.clone();
+        let state_err = state.clone();
+        let err_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                handle_line(&mgr_err, &state_err, &line, true).await;
+            }
+        });
+
+        let (status, _, _) = tokio::join!(child.wait(), out_task, err_task);
+        match status {
+            Ok(s) if s.success() => Ok(()),
+            Ok(s) => Err(format!("Commande terminée avec code d'erreur : {}", s.code().unwrap_or(-1))),
+            Err(e) => Err(format!("Erreur lors de l'attente du processus : {}", e)),
+        }
+    }
+
     // 1. Démontage préventif et nettoyage
     set_step(&manager, "Nettoyage et partitionnement du disque", 15).await;
     log(&manager, "Démontage préventif des anciens points de montage sur /mnt...").await;
@@ -349,7 +519,7 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
         "--no-root-password",
         "--impure",
     ]);
-    if let Err(e) = exec_cmd(manager.clone(), cmd).await {
+    if let Err(e) = exec_nixos_install(manager.clone(), cmd).await {
         fail_install(manager, e).await;
         return;
     }
