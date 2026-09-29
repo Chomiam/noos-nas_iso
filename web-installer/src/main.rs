@@ -38,6 +38,7 @@ async fn main() {
         .route("/api/validate-user", post(validate_user_route))
         .route("/api/install", post(start_install))
         .route("/api/status", get(get_status))
+        .route("/api/logs", get(get_logs))
         .route("/api/install/stream", get(install_stream))
         .route("/api/reboot", post(trigger_reboot))
         .route("/api/network", get(get_network_info))
@@ -193,6 +194,18 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<InstallStatusRes
         step: m.step.clone(),
         error: m.error.clone(),
         logs_count: m.logs.len(),
+    })
+}
+
+#[derive(Serialize)]
+struct InstallLogsResponse {
+    logs: Vec<String>,
+}
+
+async fn get_logs(State(state): State<Arc<AppState>>) -> Json<InstallLogsResponse> {
+    let m = state.manager.lock().await;
+    Json(InstallLogsResponse {
+        logs: m.logs.clone(),
     })
 }
 

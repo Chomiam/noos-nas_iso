@@ -45,6 +45,9 @@ in
   isoImage.makeUsbBootable = true;
   boot.zfs.forceImportRoot = false;
 
+  # Empêcher l'extinction / mise en veille de l'écran console (DPMS & consoleblank)
+  boot.kernelParams = [ "consoleblank=0" ];
+
   # Pilotes réseau Realtek 2.5GbE (RTL8125), Intel (igc, e1000e) et firmwares
   boot.kernelModules = [ "r8169" "igc" "e1000e" ];
   hardware.enableRedistributableFirmware = true;
@@ -58,14 +61,6 @@ in
   # Suppression des bannières encombrantes par défaut de NixOS
   services.getty.helpLine = lib.mkForce "";
   services.getty.greetingLine = lib.mkForce "";
-
-  # Rafraîchir proprement l'écran lors du login automatique TTY
-  environment.interactiveShellInit = ''
-    if [ "$(tty 2>/dev/null)" = "/dev/tty1" ]; then
-      printf "\033c"
-      [ -f /etc/issue ] && cat /etc/issue
-    fi
-  '';
 
   # Autoriser root sans mot de passe en console pour dépannage éventuel
   users.users.root.initialHashedPassword = "";

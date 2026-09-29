@@ -2,7 +2,8 @@
 
 let
   bannerScript = pkgs.writeShellScript "steveos-banner-loop" ''
-    LAST_IP=""
+    # Désactiver la mise en veille de la console TTY1
+    ${pkgs.util-linux}/bin/setterm -blank 0 -powerdown 0 > /dev/tty1 2>/dev/null || true
 
     get_lan_ip() {
       # 1. Via route par défaut vers l'extérieur
@@ -39,16 +40,13 @@ let
     BOLD_WHITE="''${ESC}[1;37m"
     DIM="''${ESC}[0;90m"
 
-    # Boucle dynamique de surveillance réseau et d'affichage
+    # Boucle continue de rafraîchissement d'affichage
     while true; do
       IP=$(get_lan_ip)
 
       if [ -n "$IP" ]; then
-        if [ "$IP" != "$LAST_IP" ]; then
-          LAST_IP="$IP"
-
-          # Mise à jour de /etc/issue pour les consoles TTY avec vraies séquences ANSI
-          cat << ISSUE_EOF > /etc/issue
+        ${pkgs.ncurses}/bin/clear > /dev/tty1 2>/dev/null || true
+        cat << ISSUE_EOF > /dev/tty1 2>/dev/null || true
 
 ''${BOLD_PURPLE}  ╔══════════════════════════════════════════════════════════════════════════════╗''${RESET}
 ''${BOLD_PURPLE}  ║''${RESET}                ''${BOLD_WHITE}🚀 STEvE_OS NAS Edition — Installateur Réseau''${RESET}                 ''${BOLD_PURPLE}║''${RESET}
@@ -61,19 +59,12 @@ let
 
     Ouvrez ce lien depuis un autre PC connecté au même réseau local.
 ''${BOLD_PURPLE}  ──────────────────────────────────────────────────────────────────────────────''${RESET}
-    ''${DIM}Console locale de secours (root sans mot de passe). Port SSH actif sur 22.''${RESET}
+    ''${DIM}Console de secours active sur TTY2 (Alt+F2) ou SSH sur port 22 (root).''${RESET}
 
 ISSUE_EOF
-
-          # Nettoyage et affichage propre sur /dev/tty1
-          printf "\033c" > /dev/tty1 2>/dev/null || true
-          cat /etc/issue > /dev/tty1 2>/dev/null || true
-        fi
       else
-        if [ "$LAST_IP" != "waiting" ]; then
-          LAST_IP="waiting"
-          printf "\033c" > /dev/tty1 2>/dev/null || true
-          cat << 'WAIT_EOF' > /dev/tty1 2>/dev/null || true
+        ${pkgs.ncurses}/bin/clear > /dev/tty1 2>/dev/null || true
+        cat << 'WAIT_EOF' > /dev/tty1 2>/dev/null || true
 
 ================================================================================
   [!] STEvE_OS NAS Edition : En attente d'une adresse IP réseau (DHCP)...
@@ -82,10 +73,9 @@ ISSUE_EOF
 ================================================================================
 
 WAIT_EOF
-        fi
       fi
 
-      sleep 2
+      sleep 4
     done
   '';
 in
