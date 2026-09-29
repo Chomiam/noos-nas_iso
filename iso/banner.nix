@@ -40,13 +40,20 @@ let
     BOLD_WHITE="''${ESC}[1;37m"
     DIM="''${ESC}[0;90m"
 
-    # Boucle continue de rafraîchissement d'affichage
+    LAST_IP=""
+    LAST_STATE=""
+
+    # Surveillance de l'IP : n'écrit à l'écran qu'en cas de changement d'état ou d'IP
     while true; do
       IP=$(get_lan_ip)
 
       if [ -n "$IP" ]; then
-        ${pkgs.ncurses}/bin/clear > /dev/tty1 2>/dev/null || true
-        cat << ISSUE_EOF > /dev/tty1 2>/dev/null || true
+        if [ "$IP" != "$LAST_IP" ]; then
+          LAST_IP="$IP"
+          LAST_STATE="ready"
+
+          # Mise à jour de /etc/issue pour les consoles TTY
+          cat << ISSUE_EOF > /etc/issue 2>/dev/null || true
 
 ''${BOLD_PURPLE}  ╔══════════════════════════════════════════════════════════════════════════════╗''${RESET}
 ''${BOLD_PURPLE}  ║''${RESET}                ''${BOLD_WHITE}🚀 STEvE_OS NAS Edition — Installateur Réseau''${RESET}                 ''${BOLD_PURPLE}║''${RESET}
@@ -62,9 +69,19 @@ let
     ''${DIM}Console de secours active sur TTY2 (Alt+F2) ou SSH sur port 22 (root).''${RESET}
 
 ISSUE_EOF
+
+          # Effacer complètement l'écran (2J), le scrollback (3J), placer le curseur en 1,1 (H) et afficher la bannière
+          printf "\033[2J\033[3J\033[H" > /dev/tty1 2>/dev/null || true
+          cat /etc/issue > /dev/tty1 2>/dev/null || true
+        fi
       else
-        ${pkgs.ncurses}/bin/clear > /dev/tty1 2>/dev/null || true
-        cat << 'WAIT_EOF' > /dev/tty1 2>/dev/null || true
+        if [ "$LAST_STATE" != "waiting" ]; then
+          LAST_STATE="waiting"
+          LAST_IP=""
+
+          # Nettoyage et affichage du statut d'attente réseau
+          printf "\033[2J\033[3J\033[H" > /dev/tty1 2>/dev/null || true
+          cat << 'WAIT_EOF' > /dev/tty1 2>/dev/null || true
 
 ================================================================================
   [!] STEvE_OS NAS Edition : En attente d'une adresse IP réseau (DHCP)...
@@ -73,6 +90,7 @@ ISSUE_EOF
 ================================================================================
 
 WAIT_EOF
+        fi
       fi
 
       sleep 4
