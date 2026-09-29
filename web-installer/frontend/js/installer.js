@@ -42,14 +42,17 @@ async function checkUpdates(manual = false) {
     if (!res.ok) throw new Error("Erreur HTTP lors de la vérification");
     const data = await res.json();
 
-    if (data.update_available) {
+    const hasAlreadyUpdated = sessionStorage.getItem("steveos_updated") === "true";
+
+    if (data.update_available && !hasAlreadyUpdated) {
+      sessionStorage.setItem("steveos_updated", "true");
       if (modal) {
         modal.style.display = "flex";
         modal.style.opacity = "1";
         spinner.style.display = "none";
         iconWarn.style.display = "block";
         title.textContent = "Mise à jour disponible !";
-        desc.textContent = "Une nouvelle version de l'installateur a été détectée sur GitHub. Mise à jour et redémarrage automatique en cours...";
+        desc.textContent = "Une nouvelle version de l'installateur a été détectée sur GitHub. Mise à jour et redémarrage en cours...";
         
         document.getElementById("commit-current").textContent = data.current_short;
         document.getElementById("commit-remote").textContent = data.remote_short;
@@ -59,11 +62,25 @@ async function checkUpdates(manual = false) {
 
       if (statusText) statusText.textContent = `MàJ : ${data.current_short} ➔ ${data.remote_short}`;
 
-      // Lancement automatique de la mise à jour
       setTimeout(() => {
         applyUpdate();
       }, 1000);
 
+    } else if (data.update_available && hasAlreadyUpdated) {
+      if (statusText) statusText.textContent = `MàJ dispo (${data.remote_short})`;
+      if (modal) {
+        modal.style.display = "flex";
+        modal.style.opacity = "1";
+        spinner.style.display = "none";
+        iconWarn.style.display = "block";
+        title.textContent = "Mise à jour disponible";
+        desc.textContent = "L'installateur a déjà été mis à jour durant cette session. Vous pouvez relancer la mise à jour ou continuer l'installation.";
+        
+        document.getElementById("commit-current").textContent = data.current_short;
+        document.getElementById("commit-remote").textContent = data.remote_short;
+        commitsBox.style.display = "flex";
+        btnApply.style.display = "flex";
+      }
     } else {
       if (statusText) statusText.textContent = `À jour (${data.current_short})`;
 
@@ -579,4 +596,12 @@ async function rebootNow() {
   } catch {}
 
   alert("Le NAS redémarre. Dès le redémarrage terminé, ouvrez http://" + currentIp + ":9339 dans votre navigateur.");
+}
+
+function dismissUpdateModal() {
+  const modal = document.getElementById("update-modal");
+  if (modal) {
+    modal.style.opacity = "0";
+    setTimeout(() => { modal.style.display = "none"; }, 300);
+  }
 }

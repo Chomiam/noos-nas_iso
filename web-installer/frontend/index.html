@@ -45,9 +45,12 @@
           <span class="commit-pill commit-remote" id="commit-remote">...</span>
         </div>
 
-        <div class="update-actions" id="update-actions" style="display: none; margin-top: 8px;">
+        <div class="update-actions" id="update-actions" style="display: none; margin-top: 12px; gap: 8px; justify-content: center; flex-wrap: wrap;">
           <button type="button" class="btn-primary" id="btn-apply-update" onclick="applyUpdate()">
             ⚡ Mettre à jour et redémarrer
+          </button>
+          <button type="button" class="btn-secondary" id="btn-dismiss-update" onclick="dismissUpdateModal()" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 8px; padding: 8px 16px; cursor: pointer;">
+            Continuer l'installation
           </button>
         </div>
       </div>

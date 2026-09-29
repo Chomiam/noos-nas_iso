@@ -12,6 +12,13 @@ pub struct UpdateCheckResponse {
 }
 
 pub fn get_local_commit() -> String {
+    // 0. Priorité absolue au commit dynamique écrit en RAM lors d'un update
+    if let Ok(c) = std::fs::read_to_string("/run/steveos-current-commit") {
+        let trimmed = c.trim().to_string();
+        if !trimmed.is_empty() && trimmed != "unknown" {
+            return trimmed;
+        }
+    }
     // 1. Priorité au fichier etc écrit par le flake NixOS
     if let Ok(c) = std::fs::read_to_string("/etc/steveos-iso-commit") {
         let trimmed = c.trim().to_string();
@@ -88,6 +95,19 @@ pub async fn check_for_updates() -> UpdateCheckResponse {
 }
 
 pub async fn apply_self_update() -> Result<String, String> {
+    let remote_url = "https://github.com/Chomiam/steveos-nas_iso.git";
+    let remote_commit = match Command::new("git")
+        .args(["ls-remote", remote_url, "refs/heads/main"])
+        .output()
+        .await
+    {
+        Ok(o) if o.status.success() => {
+            let text = String::from_utf8_lossy(&o.stdout);
+            text.split_whitespace().next().unwrap_or("").to_string()
+        }
+        _ => String::new(),
+    };
+
     // 1. Construction du paquet à jour via nix
     let mut cmd = Command::new("nix");
     cmd.args([
@@ -105,6 +125,11 @@ pub async fn apply_self_update() -> Result<String, String> {
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
         return Err(format!("Échec de la compilation de la mise à jour : {}", err));
+    }
+
+    // Sauvegarder le commit pour briser toute boucle de détection
+    if !remote_commit.is_empty() {
+        let _ = std::fs::write("/run/steveos-current-commit", &remote_commit);
     }
 
     // 2. Déclenchement du redémarrage du service ou du processus
