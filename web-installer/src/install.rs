@@ -420,31 +420,52 @@ pub async fn run_installation(
     set_step(&manager, "Installation de la configuration STEvE_OS NAS Edition", 65).await;
     log(&manager, "Copie et personnalisation des fichiers de configuration...").await;
 
-    // Préparation de /mnt/etc/nixos
-    let _ = Command::new("mkdir").args(["-p", "/mnt/etc/nixos"]).status().await;
-
-    // Préparation de l'arborescence STEvE_OS
-    let target_cfg_dir = "/mnt/etc/nixos/steveos-nas";
+    // Préparation de /mnt/etc/nixos (la configuration NixOS est installée DIRECTEMENT dans /etc/nixos/)
+    let target_cfg_dir = "/mnt/etc/nixos";
     let _ = Command::new("mkdir").args(["-p", target_cfg_dir]).status().await;
+
+    // Sauvegarde temporaire du hardware-configuration.nix généré par nixos-generate-config
+    let hw_config_src = "/mnt/etc/nixos/hardware-configuration.nix";
+    let hw_config_backup = "/tmp/hw-config-backup.nix";
+    if std::path::Path::new(hw_config_src).exists() {
+        let _ = std::fs::copy(hw_config_src, hw_config_backup);
+    }
 
     let source_dir = "/etc/steveos-nas-source";
     if std::path::Path::new(source_dir).exists() {
-        log(&manager, "Copie de la configuration locale embarquée...").await;
+        log(&manager, "Copie de la configuration locale embarquée vers /mnt/etc/nixos...").await;
         let mut cmd = Command::new("cp");
-        cmd.args(["-r", &format!("{}/.", source_dir), target_cfg_dir]);
+        cmd.args(["-a", &format!("{}/.", source_dir), target_cfg_dir]);
         let _ = exec_cmd(manager.clone(), cmd).await;
     } else {
-        log(&manager, "Clonage du dépôt officiel GitHub Chomiam/steve_os-nix...").await;
-        let mut cmd = Command::new("git");
-        cmd.args(["clone", "--depth=1", "https://github.com/Chomiam/steve_os-nix.git", target_cfg_dir]);
-        let _ = exec_cmd(manager.clone(), cmd).await;
+        log(&manager, "Clonage du dépôt officiel GitHub Chomiam/steve_os-nix vers /mnt/etc/nixos...").await;
+        let tmp_clone_dir = "/tmp/steveos-nas-repo";
+        let _ = Command::new("rm").args(["-rf", tmp_clone_dir]).status().await;
+
+        let mut clone_cmd = Command::new("git");
+        clone_cmd.args(["clone", "--depth=1", "https://github.com/Chomiam/steve_os-nix.git", tmp_clone_dir]);
+        if let Err(e) = exec_cmd(manager.clone(), clone_cmd).await {
+            fail_install(manager, e).await;
+            return;
+        }
+
+        // Déploiement de l'arbre Git complet (y compris .git, flake.nix, etc.) directement dans /mnt/etc/nixos/
+        let mut cp_repo = Command::new("cp");
+        cp_repo.args(["-a", &format!("{}/.", tmp_clone_dir), target_cfg_dir]);
+        let _ = exec_cmd(manager.clone(), cp_repo).await;
+        let _ = Command::new("rm").args(["-rf", tmp_clone_dir]).status().await;
     }
 
-    // Copie de hardware-configuration.nix dans hosts/nas/
+    // Restauration de hardware-configuration.nix à la racine et dans hosts/nas/
     let _ = Command::new("mkdir").args(["-p", &format!("{}/hosts/nas", target_cfg_dir)]).status().await;
-    let mut cp_hw = Command::new("cp");
-    cp_hw.args(["/mnt/etc/nixos/hardware-configuration.nix", &format!("{}/hosts/nas/hardware-configuration.nix", target_cfg_dir)]);
-    let _ = exec_cmd(manager.clone(), cp_hw).await;
+    if std::path::Path::new(hw_config_backup).exists() {
+        let _ = std::fs::copy(hw_config_backup, &format!("{}/hardware-configuration.nix", target_cfg_dir));
+        let _ = std::fs::copy(hw_config_backup, &format!("{}/hosts/nas/hardware-configuration.nix", target_cfg_dir));
+        let _ = std::fs::remove_file(hw_config_backup);
+    }
+
+    // Création d'un lien symbolique de rétrocompatibilité /mnt/etc/nixos/steveos-nas -> .
+    let _ = Command::new("ln").args(["-sfn", ".", &format!("{}/steveos-nas", target_cfg_dir)]).status().await;
 
     // Génération du mot de passe haché
     let password_hash = match Command::new("openssl")
@@ -500,8 +521,7 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
     );
 
     let _ = std::fs::write(format!("{}/vars.nix", target_cfg_dir), &vars_content);
-    let _ = std::fs::write("/mnt/etc/nixos/vars.nix", &vars_content);
-    log(&manager, "Fichier vars.nix configuré avec succès.").await;
+    log(&manager, "Fichier /mnt/etc/nixos/vars.nix configuré avec succès.").await;
 
     // Suivre les fichiers dans git pour que Nix Flake les prenne en compte
     let mut git_add = Command::new("git");
