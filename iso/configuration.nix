@@ -29,6 +29,18 @@
   networking.useDHCP = lib.mkForce true;
   networking.dhcpcd.enable = true;
 
+  # Suppression des bannières encombrantes par défaut de NixOS
+  services.getty.helpLine = lib.mkForce "";
+  services.getty.greetingLine = lib.mkForce "";
+
+  # Rafraîchir proprement l'écran lors du login automatique TTY
+  environment.interactiveShellInit = ''
+    if [ "$(tty 2>/dev/null)" = "/dev/tty1" ]; then
+      printf "\033c"
+      [ -f /etc/issue ] && cat /etc/issue
+    fi
+  '';
+
   # Autoriser root sans mot de passe en console pour dépannage éventuel
   users.users.root.initialHashedPassword = "";
 

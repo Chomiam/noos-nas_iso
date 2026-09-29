@@ -59,23 +59,23 @@ impl InstallManager {
     }
 }
 
+async fn log(mgr: &Arc<Mutex<InstallManager>>, msg: &str) {
+    let mut m = mgr.lock().await;
+    m.add_log(msg.to_string());
+}
+
+async fn set_step(mgr: &Arc<Mutex<InstallManager>>, step: &str, progress: u32) {
+    let mut m = mgr.lock().await;
+    m.step = step.to_string();
+    m.progress = progress;
+    let line = format!("[PROGRESS] {}% - {}", progress, step);
+    m.add_log(line);
+}
+
 pub async fn run_installation(
     manager: Arc<Mutex<InstallManager>>,
     req: InstallRequest,
 ) {
-    let log = |mgr: &Arc<Mutex<InstallManager>>, msg: &str| {
-        let mut m = mgr.blocking_lock();
-        m.add_log(msg.to_string());
-    };
-
-    let set_step = |mgr: &Arc<Mutex<InstallManager>>, step: &str, progress: u32| {
-        let mut m = mgr.blocking_lock();
-        m.step = step.to_string();
-        m.progress = progress;
-        let line = format!("[PROGRESS] {}% - {}", progress, step);
-        m.add_log(line);
-    };
-
     {
         let mut m = manager.lock().await;
         m.status = "running".to_string();
@@ -88,13 +88,13 @@ pub async fn run_installation(
     }
 
     // Helper to run a command and stream stdout/stderr
-    let exec_cmd = |mgr: Arc<Mutex<InstallManager>>, mut cmd: Command| async move {
+    async fn exec_cmd(mgr: Arc<Mutex<InstallManager>>, mut cmd: Command) -> Result<(), String> {
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
                 let err_msg = format!("❌ Erreur d'exécution de la commande : {}", e);
-                log(&mgr, &err_msg);
+                log(&mgr, &err_msg).await;
                 return Err(err_msg);
             }
         };
@@ -126,18 +126,18 @@ pub async fn run_installation(
             Ok(s) => Err(format!("Commande terminée avec code d'erreur : {}", s.code().unwrap_or(-1))),
             Err(e) => Err(format!("Erreur lors de l'attente du processus : {}", e)),
         }
-    };
+    }
 
     // 1. Partitioning
-    set_step(&manager, "Nettoyage et partitionnement du disque", 15);
-    log(&manager, &format!("Effacement des anciennes signatures sur {}", req.disk_path));
+    set_step(&manager, "Nettoyage et partitionnement du disque", 15).await;
+    log(&manager, &format!("Effacement des anciennes signatures sur {}", req.disk_path)).await;
     let mut cmd = Command::new("wipefs");
     cmd.args(["-a", "-f", &req.disk_path]);
     if let Err(e) = exec_cmd(manager.clone(), cmd).await {
-        log(&manager, &format!("Avertissement wipefs : {}", e));
+        log(&manager, &format!("Avertissement wipefs : {}", e)).await;
     }
 
-    log(&manager, &format!("Création de la table de partition GPT sur {}", req.disk_path));
+    log(&manager, &format!("Création de la table de partition GPT sur {}", req.disk_path)).await;
     let mut cmd = Command::new("sgdisk");
     cmd.args([
         "-Z",
@@ -160,11 +160,11 @@ pub async fn run_installation(
         (format!("{}1", req.disk_path), format!("{}2", req.disk_path))
     };
 
-    log(&manager, &format!("Partitions détectées : Boot={} | Racine={}", boot_part, root_part));
+    log(&manager, &format!("Partitions détectées : Boot={} | Racine={}", boot_part, root_part)).await;
 
     // 2. Formatage
-    set_step(&manager, "Formatage des partitions", 30);
-    log(&manager, &format!("Formatage FAT32 de la partition EFI {}", boot_part));
+    set_step(&manager, "Formatage des partitions", 30).await;
+    log(&manager, &format!("Formatage FAT32 de la partition EFI {}", boot_part)).await;
     let mut cmd = Command::new("mkfs.vfat");
     cmd.args(["-F", "32", "-n", "BOOT", &boot_part]);
     if let Err(e) = exec_cmd(manager.clone(), cmd).await {
@@ -173,7 +173,7 @@ pub async fn run_installation(
     }
 
     if req.filesystem == "btrfs" {
-        log(&manager, &format!("Formatage Btrfs de la partition racine {}", root_part));
+        log(&manager, &format!("Formatage Btrfs de la partition racine {}", root_part)).await;
         let mut cmd = Command::new("mkfs.btrfs");
         cmd.args(["-f", "-L", "ROOT", &root_part]);
         if let Err(e) = exec_cmd(manager.clone(), cmd).await {
@@ -182,7 +182,7 @@ pub async fn run_installation(
         }
 
         // Création des sous-volumes Btrfs
-        set_step(&manager, "Création des sous-volumes Btrfs (@, @home, @nix, @snapshots)", 40);
+        set_step(&manager, "Création des sous-volumes Btrfs (@, @home, @nix, @snapshots)", 40).await;
         let _ = Command::new("mkdir").args(["-p", "/mnt"]).status().await;
         let _ = Command::new("mount").args(["-t", "btrfs", &root_part, "/mnt"]).status().await;
 
@@ -194,7 +194,7 @@ pub async fn run_installation(
         let _ = Command::new("umount").arg("/mnt").status().await;
 
         // Montage définitif
-        set_step(&manager, "Montage des systèmes de fichiers", 45);
+        set_step(&manager, "Montage des systèmes de fichiers", 45).await;
         let _ = Command::new("mount").args(["-o", "subvol=@,compress=zstd,noatime", &root_part, "/mnt"]).status().await;
         let _ = Command::new("mkdir").args(["-p", "/mnt/home", "/mnt/nix", "/mnt/.snapshots", "/mnt/boot"]).status().await;
         let _ = Command::new("mount").args(["-o", "subvol=@home,compress=zstd", &root_part, "/mnt/home"]).status().await;
@@ -202,7 +202,7 @@ pub async fn run_installation(
         let _ = Command::new("mount").args(["-o", "subvol=@snapshots,compress=zstd", &root_part, "/mnt/.snapshots"]).status().await;
         let _ = Command::new("mount").args([&boot_part, "/mnt/boot"]).status().await;
     } else {
-        log(&manager, &format!("Formatage Ext4 de la partition racine {}", root_part));
+        log(&manager, &format!("Formatage Ext4 de la partition racine {}", root_part)).await;
         let mut cmd = Command::new("mkfs.ext4");
         cmd.args(["-F", "-L", "ROOT", &root_part]);
         if let Err(e) = exec_cmd(manager.clone(), cmd).await {
@@ -210,7 +210,7 @@ pub async fn run_installation(
             return;
         }
 
-        set_step(&manager, "Montage des systèmes de fichiers", 45);
+        set_step(&manager, "Montage des systèmes de fichiers", 45).await;
         let _ = Command::new("mkdir").args(["-p", "/mnt"]).status().await;
         let _ = Command::new("mount").args([&root_part, "/mnt"]).status().await;
         let _ = Command::new("mkdir").args(["-p", "/mnt/boot"]).status().await;
@@ -218,7 +218,7 @@ pub async fn run_installation(
     }
 
     // 3. Génération et injection de la configuration NixOS
-    set_step(&manager, "Génération de la configuration matérielle NixOS", 55);
+    set_step(&manager, "Génération de la configuration matérielle NixOS", 55).await;
     let mut cmd = Command::new("nixos-generate-config");
     cmd.args(["--root", "/mnt"]);
     if let Err(e) = exec_cmd(manager.clone(), cmd).await {
@@ -226,8 +226,8 @@ pub async fn run_installation(
         return;
     }
 
-    set_step(&manager, "Installation de la configuration STEvE_OS NAS Edition", 65);
-    log(&manager, "Copie et personnalisation des fichiers de configuration...");
+    set_step(&manager, "Installation de la configuration STEvE_OS NAS Edition", 65).await;
+    log(&manager, "Copie et personnalisation des fichiers de configuration...").await;
 
     // Préparation de /mnt/etc/nixos
     let _ = Command::new("mkdir").args(["-p", "/mnt/etc/nixos"]).status().await;
@@ -235,12 +235,12 @@ pub async fn run_installation(
     // Si le dépôt source est cloné localement dans l'ISO ou sur GitHub
     let source_dir = "/etc/steveos-nas-source";
     if std::path::Path::new(source_dir).exists() {
-        log(&manager, "Copie de la configuration locale embarquée...");
+        log(&manager, "Copie de la configuration locale embarquée...").await;
         let mut cmd = Command::new("cp");
         cmd.args(["-r", &format!("{}/.", source_dir), "/mnt/etc/nixos/"]);
         let _ = exec_cmd(manager.clone(), cmd).await;
     } else {
-        log(&manager, "Clonage du dépôt officiel GitHub Chomiam/steve_os-nix...");
+        log(&manager, "Clonage du dépôt officiel GitHub Chomiam/steve_os-nix...").await;
         let mut cmd = Command::new("git");
         cmd.args(["clone", "--depth=1", "https://github.com/Chomiam/steve_os-nix.git", "/mnt/etc/nixos/steveos-nas"]);
         let _ = exec_cmd(manager.clone(), cmd).await;
@@ -254,7 +254,7 @@ pub async fn run_installation(
     {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => {
-            log(&manager, "Avertissement : utilisation de mkpasswd pour le hash...");
+            log(&manager, "Avertissement : utilisation de mkpasswd pour le hash...").await;
             let o = Command::new("mkpasswd").args(["-m", "sha-512", &req.password]).output().await;
             o.map(|res| String::from_utf8_lossy(&res.stdout).trim().to_string()).unwrap_or_default()
         }
@@ -300,11 +300,11 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
     );
 
     let _ = std::fs::write("/mnt/etc/nixos/vars.nix", vars_content);
-    log(&manager, "Fichier /mnt/etc/nixos/vars.nix configuré avec succès.");
+    log(&manager, "Fichier /mnt/etc/nixos/vars.nix configuré avec succès.").await;
 
     // 4. Lancement de nixos-install
-    set_step(&manager, "Compilation et installation du système (nixos-install)", 75);
-    log(&manager, "Exécution de nixos-install... Cette étape peut prendre quelques minutes.");
+    set_step(&manager, "Compilation et installation du système (nixos-install)", 75).await;
+    log(&manager, "Exécution de nixos-install... Cette étape peut prendre quelques minutes.").await;
 
     let mut cmd = Command::new("nixos-install");
     cmd.args(["--no-root-password", "--impure"]);
@@ -314,7 +314,7 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
     }
 
     // 5. Finalisation
-    set_step(&manager, "Finalisation de l'installation et synchronisation des disques", 98);
+    set_step(&manager, "Finalisation de l'installation et synchronisation des disques", 98).await;
     let _ = Command::new("sync").status().await;
 
     {

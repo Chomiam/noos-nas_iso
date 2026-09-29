@@ -5,23 +5,23 @@ let
     LAST_IP=""
 
     get_lan_ip() {
-      # 1. Via route par défaut vers l'extérieur (interroge la table de routage du noyau)
+      # 1. Via route par défaut vers l'extérieur
       local ip=$(${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 2>/dev/null | ${pkgs.gawk}/bin/awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
-      if [ -n "$ip" ] && [[ "$ip" != 127.* ]] && [[ "$ip" != 169.254.* ]]; then
+      if [ -n "$ip" ] && [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$ip" != 127.* ]] && [[ "$ip" != 169.254.* ]]; then
         echo "$ip"
         return
       fi
 
       # 2. Via première adresse IPv4 avec scope global
       ip=$(${pkgs.iproute2}/bin/ip -4 -o addr show scope global 2>/dev/null | ${pkgs.gawk}/bin/awk '{split($4, a, "/"); print a[1]}' | ${pkgs.gnugrep}/bin/grep -v '^127\.' | ${pkgs.gnugrep}/bin/grep -v '^169\.254\.' | head -n1)
-      if [ -n "$ip" ]; then
+      if [ -n "$ip" ] && [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         echo "$ip"
         return
       fi
 
-      # 3. Via hostname -I en filtrant loopback et lien local
+      # 3. Via hostname -I en filtrant strictement IPv4 privé (exclure IPv6)
       for candidate in $(${pkgs.hostname}/bin/hostname -I 2>/dev/null); do
-        if [[ "$candidate" != 127.* ]] && [[ "$candidate" != 169.254.* ]]; then
+        if [[ "$candidate" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$candidate" != 127.* ]] && [[ "$candidate" != 169.254.* ]]; then
           echo "$candidate"
           return
         fi
@@ -29,6 +29,15 @@ let
 
       echo ""
     }
+
+    ESC=$(printf '\033')
+    RESET="''${ESC}[0m"
+    BOLD_PURPLE="''${ESC}[1;35m"
+    BOLD_CYAN="''${ESC}[1;36m"
+    BOLD_GREEN="''${ESC}[1;32m"
+    BOLD_YELLOW="''${ESC}[1;33m"
+    BOLD_WHITE="''${ESC}[1;37m"
+    DIM="''${ESC}[0;90m"
 
     # Boucle dynamique de surveillance réseau et d'affichage
     while true; do
@@ -38,31 +47,32 @@ let
         if [ "$IP" != "$LAST_IP" ]; then
           LAST_IP="$IP"
 
-          # Mise à jour de /etc/issue pour les consoles TTY
+          # Mise à jour de /etc/issue pour les consoles TTY avec vraies séquences ANSI
           cat << ISSUE_EOF > /etc/issue
 
-  \e[1;35m╔══════════════════════════════════════════════════════════════════════════════╗\e[0m
-  \e[1;35m║\e[0m                \e[1;37m🚀 STEvE_OS NAS Edition — Installateur Réseau\e[0m                 \e[1;35m║\e[0m
-  \e[1;35m╚══════════════════════════════════════════════════════════════════════════════╝\e[0m
+''${BOLD_PURPLE}  ╔══════════════════════════════════════════════════════════════════════════════╗''${RESET}
+''${BOLD_PURPLE}  ║''${RESET}                ''${BOLD_WHITE}🚀 STEvE_OS NAS Edition — Installateur Réseau''${RESET}                 ''${BOLD_PURPLE}║''${RESET}
+''${BOLD_PURPLE}  ╚══════════════════════════════════════════════════════════════════════════════╝''${RESET}
 
-    \e[1;32m●\e[0m Adresse IP réseau locale : \e[1;37m$IP\e[0m
-    \e[1;36m●\e[0m Interface web d'installation :
+    ''${BOLD_GREEN}●''${RESET} Adresse IP réseau locale : ''${BOLD_WHITE}$IP''${RESET}
+    ''${BOLD_CYAN}●''${RESET} Interface web d'installation :
 
-        \e[1;33m👉  http://$IP:8080\e[0m
+        ''${BOLD_YELLOW}👉  http://$IP:8080''${RESET}
 
     Ouvrez ce lien depuis un autre PC connecté au même réseau local.
-  \e[1;35m──────────────────────────────────────────────────────────────────────────────\e[0m
-    \e[0;90mConsole locale de secours (root sans mot de passe). Port SSH actif sur 22.\e[0m
+''${BOLD_PURPLE}  ──────────────────────────────────────────────────────────────────────────────''${RESET}
+    ''${DIM}Console locale de secours (root sans mot de passe). Port SSH actif sur 22.''${RESET}
 
 ISSUE_EOF
 
-          # Affichage immédiat sur /dev/tty1
-          echo -e "\n\033[1;32m✔ Adresse IP obtenue : http://$IP:8080\033[0m\n" > /dev/tty1 2>/dev/null || true
+          # Nettoyage et affichage propre sur /dev/tty1
+          printf "\033c" > /dev/tty1 2>/dev/null || true
           cat /etc/issue > /dev/tty1 2>/dev/null || true
         fi
       else
         if [ "$LAST_IP" != "waiting" ]; then
           LAST_IP="waiting"
+          printf "\033c" > /dev/tty1 2>/dev/null || true
           cat << 'WAIT_EOF' > /dev/tty1 2>/dev/null || true
 
 ================================================================================
