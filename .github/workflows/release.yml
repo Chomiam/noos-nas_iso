@@ -1,0 +1,83 @@
+name: "Build and Release ISO"
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version du tag (ex: v0.1.8)"
+        required: true
+        default: "v0.1.8"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: "Compiler et Publier l'ISO"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Récupération du dépôt
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ❄️ Installation de Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: ⚡ Configuration Cachix (steveos)
+        uses: cachix/cachix-action@v17
+        with:
+          name: steveos
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: 🔨 Compilation de l'Image ISO STEvE_OS
+        run: |
+          nix build .#iso --print-out-paths
+
+      - name: 📦 Préparation des fichiers d'artefacts
+        id: prep
+        run: |
+          mkdir -p release-assets
+          ISO_PATH=$(ls result/iso/*.iso | head -n1)
+          cp "$ISO_PATH" release-assets/steveos-nas-installer.iso
+          cd release-assets
+          sha256sum steveos-nas-installer.iso > steveos-nas-installer.iso.sha256
+          echo "SHA256=$(cat steveos-nas-installer.iso.sha256 | awk '{print $1}')" >> $GITHUB_OUTPUT
+          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+      - name: 🚀 Création / Publication de la Release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prep.outputs.TAG }}
+          name: "STEvE_OS NAS Edition Installer ${{ steps.prep.outputs.TAG }}"
+          body: |
+            ## 🚀 STEvE_OS NAS Edition — Installateur Réseau Headless (${{ steps.prep.outputs.TAG }})
+
+            Image ISO minimale bootable pour l'installation automatisée de **STEvE_OS NAS Edition**.
+
+            ### 📋 Nouveautés & Correctifs :
+            - ✨ **Ajout du champ Nom complet** dans l'installateur web réseau
+            - 🛡️ **Généralisation dynamique du répertoire personnel** (`homeDirectory = /home/<username>`) évitant les comptes orphelins résiduels
+            - 🔒 **Sécurisation du script d'activation anti-suppression** NixOS (`steveosUsersSync`)
+            - 🔄 **Mise à jour en direct** de l'installateur et des paquets officiels
+
+            ### 💾 Fichiers & Vérification d'intégrité :
+            - **Fichier ISO** : `steveos-nas-installer.iso`
+            - **Empreinte SHA-256** : `${{ steps.prep.outputs.SHA256 }}`
+          files: |
+            release-assets/steveos-nas-installer.iso
+            release-assets/steveos-nas-installer.iso.sha256
+          generate_release_notes: false
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
