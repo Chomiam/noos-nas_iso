@@ -8,6 +8,8 @@ use tokio::sync::{broadcast, Mutex};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstallRequest {
     pub username: String,
+    #[serde(default)]
+    pub full_name: Option<String>,
     pub password: String,
     pub disk_path: String,
     pub filesystem: String, // "btrfs" or "ext4"
@@ -481,6 +483,13 @@ pub async fn run_installation(
         }
     };
 
+    let full_name = req
+        .full_name
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Administrateur STEvE_OS NAS");
+
     // Écriture du fichier vars.nix personnalisé
     let vars_content = format!(
 r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
@@ -491,7 +500,8 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
 
   user = {{
     username = "{}";
-    description = "Administrateur STEvE_OS NAS";
+    fullName = "{}";
+    homeDirectory = "/home/{}";
     initialHashedPassword = "{}";
     hashedPassword = "{}";
   }};
@@ -505,6 +515,10 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
   }};
 
   services = {{
+    dashboard = {{
+      enable = true;
+      port = 9339;
+    }};
     jellyfin = {{
       enable = false;
       openFirewall = true;
@@ -512,13 +526,17 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
     samba = {{
       enable = true;
     }};
+    sftp = {{
+      enable = true;
+      port = 22;
+    }};
     nfs = {{
       enable = false;
     }};
   }};
 }}
 "#,
-        req.hostname, req.username, password_hash, password_hash
+        req.hostname, req.username, full_name, req.username, password_hash, password_hash
     );
 
     let _ = std::fs::write(format!("{}/vars.nix", target_cfg_dir), &vars_content);

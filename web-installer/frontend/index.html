@@ -76,7 +76,7 @@
                 Nom d'utilisateur <span class="required">*</span>
               </label>
               <div class="input-wrapper">
-                <input type="text" id="username" class="form-input font-mono" placeholder="ex: admin_nas, chomiam" autocomplete="off" oninput="checkUsernameLive()">
+                <input type="text" id="username" class="form-input font-mono" placeholder="ex: admin, alex" autocomplete="off" oninput="checkUsernameLive()">
                 <span class="validation-icon" id="user-val-icon"></span>
               </div>
               <div class="input-hint" id="user-hint">
@@ -84,6 +84,18 @@
               </div>
             </div>
 
+            <div class="form-group">
+              <label for="fullname" class="form-label">
+                Nom complet
+              </label>
+              <div class="input-wrapper">
+                <input type="text" id="fullname" class="form-input" placeholder="ex: Alex Martin, Administrateur">
+              </div>
+              <div class="input-hint">Nom complet d'affichage pour la session et le tableau de bord.</div>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top: 12px;">
             <div class="form-group">
               <label for="hostname" class="form-label">
                 Nom de machine (Hostname)

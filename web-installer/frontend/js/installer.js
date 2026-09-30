@@ -390,6 +390,7 @@ function togglePasswordVisibility(inputId, btn) {
 
 async function confirmAndStartInstall() {
   const username = document.getElementById("username").value.trim();
+  const fullname = document.getElementById("fullname") ? document.getElementById("fullname").value.trim() : "";
   const hostname = document.getElementById("hostname").value.trim() || "steveos-nas";
   const password = document.getElementById("password").value;
   const passwordConfirm = document.getElementById("password-confirm").value;
@@ -422,7 +423,7 @@ async function confirmAndStartInstall() {
     `• Disque : ${selectedDisk.path} (${selectedDisk.model})\n` +
     `• Capacité : ${selectedDisk.size_human}\n` +
     `• Système de fichiers : ${selectedFs.toUpperCase()}\n` +
-    `• Utilisateur : ${username}\n\n` +
+    `• Utilisateur : ${username}${fullname ? ` (${fullname})` : ""}\n\n` +
     `Toutes les partitions existantes sur ce disque seront EFFACÉES.\n` +
     `Êtes-vous certain de vouloir continuer ?`;
 
@@ -440,6 +441,7 @@ async function confirmAndStartInstall() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username,
+        full_name: fullname || undefined,
         hostname,
         password,
         disk_path: selectedDisk.path,
