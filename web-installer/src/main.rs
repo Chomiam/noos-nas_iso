@@ -302,7 +302,7 @@ async fn get_network_info() -> Json<NetworkInfo> {
     let hostname = std::process::Command::new("hostname")
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "steveos-nas".into());
+        .unwrap_or_else(|_| "noos-nas".into());
 
     Json(NetworkInfo {
         ip: primary_ip,

@@ -34,7 +34,7 @@ async function checkUpdates(manual = false) {
     commitsBox.style.display = "none";
     btnApply.style.display = "none";
     title.textContent = "Vérification des mises à jour...";
-    desc.textContent = "Interrogation du dépôt GitHub Chomiam/steveos-nas_iso...";
+    desc.textContent = "Interrogation du dépôt GitHub Chomiam/noos-nas_iso...";
   }
 
   try {
@@ -42,10 +42,10 @@ async function checkUpdates(manual = false) {
     if (!res.ok) throw new Error("Erreur HTTP lors de la vérification");
     const data = await res.json();
 
-    const hasAlreadyUpdated = sessionStorage.getItem("steveos_updated") === "true";
+    const hasAlreadyUpdated = (sessionStorage.getItem("noos_updated") || sessionStorage.getItem("steveos_updated")) === "true";
 
     if (data.update_available && !hasAlreadyUpdated) {
-      sessionStorage.setItem("steveos_updated", "true");
+      sessionStorage.setItem("noos_updated", "true"); sessionStorage.setItem("steveos_updated", "true");
       if (modal) {
         modal.style.display = "flex";
         modal.style.opacity = "1";
@@ -391,7 +391,7 @@ function togglePasswordVisibility(inputId, btn) {
 async function confirmAndStartInstall() {
   const username = document.getElementById("username").value.trim();
   const fullname = document.getElementById("fullname") ? document.getElementById("fullname").value.trim() : "";
-  const hostname = document.getElementById("hostname").value.trim() || "steveos-nas";
+  const hostname = document.getElementById("hostname").value.trim() || "noos-nas";
   const password = document.getElementById("password").value;
   const passwordConfirm = document.getElementById("password-confirm").value;
 

@@ -18,7 +18,7 @@ pub struct InstallRequest {
 }
 
 fn default_hostname() -> String {
-    "steveos-nas".to_string()
+    "noos-nas".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -433,7 +433,7 @@ pub async fn run_installation(
         let _ = std::fs::copy(hw_config_src, hw_config_backup);
     }
 
-    let source_dir = "/etc/steveos-nas-source";
+    let source_dir = if std::path::Path::new("/etc/noos-nas-source").exists() { "/etc/noos-nas-source" } else { "/etc/steveos-nas-source" };
     if std::path::Path::new(source_dir).exists() {
         log(&manager, "Copie de la configuration locale embarquée vers /mnt/etc/nixos...").await;
         let mut cmd = Command::new("cp");
@@ -441,11 +441,11 @@ pub async fn run_installation(
         let _ = exec_cmd(manager.clone(), cmd).await;
     } else {
         log(&manager, "Clonage du dépôt officiel GitHub Chomiam/steve_os-nix vers /mnt/etc/nixos...").await;
-        let tmp_clone_dir = "/tmp/steveos-nas-repo";
+        let tmp_clone_dir = "/tmp/noos-nas-repo";
         let _ = Command::new("rm").args(["-rf", tmp_clone_dir]).status().await;
 
         let mut clone_cmd = Command::new("git");
-        clone_cmd.args(["clone", "--depth=1", "https://github.com/Chomiam/steve_os-nix.git", tmp_clone_dir]);
+        clone_cmd.args(["clone", "--depth=1", "https://github.com/Chomiam/noos-nas.git", tmp_clone_dir]);
         if let Err(e) = exec_cmd(manager.clone(), clone_cmd).await {
             fail_install(manager, e).await;
             return;
@@ -467,6 +467,7 @@ pub async fn run_installation(
     }
 
     // Création d'un lien symbolique de rétrocompatibilité /mnt/etc/nixos/steveos-nas -> .
+    let _ = Command::new("ln").args(["-sfn", ".", &format!("{}/noos-nas", target_cfg_dir)]).status().await;
     let _ = Command::new("ln").args(["-sfn", ".", &format!("{}/steveos-nas", target_cfg_dir)]).status().await;
 
     // Génération du mot de passe haché

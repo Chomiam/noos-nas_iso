@@ -1,8 +1,8 @@
 [package]
-name = "steveos-web-installer"
+name = "noos-web-installer"
 version = "0.1.0"
 edition = "2021"
-description = "Installateur réseau Web pour STEvE_OS NAS Edition (Catppuccin Mocha, Port 8080)"
+description = "Installateur réseau Web pour Noos NAS Edition (Catppuccin Mocha, Port 8080)"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

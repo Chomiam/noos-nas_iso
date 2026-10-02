@@ -1,4 +1,4 @@
-# STEvE_OS NAS Edition - Catppuccin Mocha GRUB Theme
+# Noos NAS Edition - Catppuccin Mocha GRUB Theme
 # Designed for HD & 4K displays
 
 # Global Properties
@@ -13,7 +13,7 @@ terminal-width: "100%"
 terminal-height: "100%"
 terminal-border: "0"
 
-# STEvE_OS Logo (420x110)
+# Noos Logo (420x110)
 + image {
   left = 50%-210
   top = 16%

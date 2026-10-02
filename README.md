@@ -1,6 +1,6 @@
-# 🚀 STEvE_OS NAS Edition — Image ISO & Installateur Réseau
+# 🚀 Noos NAS Edition — Image ISO & Installateur Réseau
 
-Image ISO minimale bootable pour l'installation réseau automatisée de **STEvE_OS NAS Edition**.
+Image ISO minimale bootable pour l'installation réseau automatisée de **Noos NAS Edition**.
 
 ---
 
@@ -10,7 +10,7 @@ Image ISO minimale bootable pour l'installation réseau automatisée de **STEvE_
 - **Bannière TTY intelligente** : Détecte l'adresse IP locale assignée via DHCP et l'affiche sur `/dev/tty1` avec l'URL de connexion.
 - **Installateur Web Réseau (Port 8080)** : Interface moderne Catppuccin Mocha accessible depuis n'importe quel ordinateur ou smartphone connecté au même réseau.
 - **Vérification automatique des mises à jour (Auto-Update)** :
-  - Dès l'ouverture de l'installateur, le système compare le commit local de l'ISO avec la dernière version sur GitHub (`Chomiam/steveos-nas_iso`).
+  - Dès l'ouverture de l'installateur, le système compare le commit local de l'ISO avec la dernière version sur GitHub (`Chomiam/noos-nas_iso`).
   - Si une mise à jour existe, elle est compilée et le service redémarre instantanément sans intervention manuelle.
 - **Sélection et formatage du disque système** :
   - Détection automatique avec modèle, capacité et bus (`NVMe`, `SATA`, etc.).
@@ -31,7 +31,7 @@ nix build .#iso
 ```
 L'image résultante sera générée dans `result/iso/nixos-minimal-*.iso`.
 
-Un lien pratique `steveos-nas-installer.iso` pointe directement vers le dernier fichier généré.
+Un lien pratique `noos-nas-installer.iso` pointe directement vers le dernier fichier généré.
 
 ---
 
@@ -39,7 +39,7 @@ Un lien pratique `steveos-nas-installer.iso` pointe directement vers le dernier 
 
 ### Sous Linux (via `dd`) :
 ```bash
-sudo dd if=steveos-nas-installer.iso of=/dev/sdX bs=4M status=progress conv=fsync
+sudo dd if=noos-nas-installer.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 *(Remplacez `/dev/sdX` par le périphérique de votre clé USB)*
 

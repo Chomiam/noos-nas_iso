@@ -1,5 +1,5 @@
 {
-  description = "STEvE_OS NAS Edition - Image ISO d'installation réseau";
+  description = "Noos NAS Edition - Image ISO d'installation réseau";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
@@ -25,7 +25,7 @@
 
       packages.${system} = {
         web-installer = pkgs.rustPlatform.buildRustPackage {
-          pname = "steveos-web-installer";
+          pname = "noos-web-installer";
           version = "0.1.0";
           src = ./web-installer;
           cargoLock = {
@@ -38,7 +38,7 @@
 
       apps.${system}.web-installer = {
         type = "app";
-        program = "${self.packages.${system}.web-installer}/bin/steveos-web-installer";
+        program = "${self.packages.${system}.web-installer}/bin/noos-web-installer";
       };
     };
 }

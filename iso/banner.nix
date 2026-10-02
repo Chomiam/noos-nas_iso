@@ -1,7 +1,7 @@
 { config, pkgs, lib, ... }:
 
 let
-  bannerScript = pkgs.writeShellScript "steveos-banner-loop" ''
+  bannerScript = pkgs.writeShellScript "noos-banner-loop" ''
     # Désactiver la mise en veille et le mode powersave/DPMS sur /dev/tty1
     TERM=linux ${pkgs.util-linux}/bin/setterm -blank 0 -powersave off -powerdown 0 < /dev/tty1 > /dev/tty1 2>/dev/null || true
     printf "\033[9;0]\033[14;0]" > /dev/tty1 2>/dev/null || true
@@ -60,7 +60,7 @@ let
           cat << ISSUE_EOF > /dev/tty1 2>/dev/null || true
 
 ''${BOLD_PURPLE}  ╔══════════════════════════════════════════════════════════════════════════════╗''${RESET}
-''${BOLD_PURPLE}  ║''${RESET}                ''${BOLD_WHITE}🚀 STEvE_OS NAS Edition — Installateur Réseau''${RESET}                 ''${BOLD_PURPLE}║''${RESET}
+''${BOLD_PURPLE}  ║''${RESET}                ''${BOLD_WHITE}🚀 Noos NAS Edition — Installateur Réseau''${RESET}                 ''${BOLD_PURPLE}║''${RESET}
 ''${BOLD_PURPLE}  ╚══════════════════════════════════════════════════════════════════════════════╝''${RESET}
 
     ''${BOLD_GREEN}●''${RESET} Adresse IP réseau locale : ''${BOLD_WHITE}$IP''${RESET}
@@ -84,7 +84,7 @@ ISSUE_EOF
           cat << 'WAIT_EOF' > /dev/tty1 2>/dev/null || true
 
 ================================================================================
-  [!] STEvE_OS NAS Edition : En attente d'une adresse IP réseau (DHCP)...
+  [!] Noos NAS Edition : En attente d'une adresse IP réseau (DHCP)...
       - Branchez un câble Ethernet à votre box ou switch.
       - Si votre NAS possède 2 ports Ethernet, essayez le second port.
 ================================================================================
@@ -105,9 +105,10 @@ in
   systemd.services."getty@tty1".enable = lib.mkForce false;
   systemd.services."autovt@tty1".enable = lib.mkForce false;
 
-  systemd.services.steveos-banner = {
-    description = "STEvE_OS NAS Edition - Bannière Console Dédiée TTY1";
-    after = [ "network.target" "steveos-web-installer.service" ];
+  systemd.services.noos-banner = {
+    description = "Noos NAS Edition - Bannière Console Dédiée TTY1";
+    aliases = [ "steveos-banner.service" ];
+    after = [ "network.target" "noos-web-installer.service" ];
     wantedBy = [ "multi-user.target" ];
     conflicts = [ "getty@tty1.service" "autovt@tty1.service" ];
     serviceConfig = {

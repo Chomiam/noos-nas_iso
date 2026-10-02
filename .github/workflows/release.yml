@@ -33,7 +33,7 @@ jobs:
           name: steveos
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-      - name: 🔨 Compilation de l'Image ISO STEvE_OS
+      - name: 🔨 Compilation de l'Image ISO Noos
         run: |
           nix build .#iso --print-out-paths
 
@@ -42,8 +42,10 @@ jobs:
         run: |
           mkdir -p release-assets
           ISO_PATH=$(ls result/iso/*.iso | head -n1)
+          cp "$ISO_PATH" release-assets/noos-nas-installer.iso
           cp "$ISO_PATH" release-assets/steveos-nas-installer.iso
           cd release-assets
+          sha256sum noos-nas-installer.iso > noos-nas-installer.iso.sha256
           sha256sum steveos-nas-installer.iso > steveos-nas-installer.iso.sha256
           echo "SHA256=$(cat steveos-nas-installer.iso.sha256 | awk '{print $1}')" >> $GITHUB_OUTPUT
           
@@ -58,11 +60,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.prep.outputs.TAG }}
-          name: "STEvE_OS NAS Edition Installer ${{ steps.prep.outputs.TAG }}"
+          name: "Noos NAS Edition Installer ${{ steps.prep.outputs.TAG }}"
           body: |
-            ## 🚀 STEvE_OS NAS Edition — Installateur Réseau Headless (${{ steps.prep.outputs.TAG }})
+            ## 🚀 Noos NAS Edition — Installateur Réseau Headless (${{ steps.prep.outputs.TAG }})
 
-            Image ISO minimale bootable pour l'installation automatisée de **STEvE_OS NAS Edition**.
+            Image ISO minimale bootable pour l'installation automatisée de **Noos NAS Edition**.
 
             ### 📋 Nouveautés & Correctifs :
             - ✨ **Ajout du champ Nom complet** dans l'installateur web réseau
@@ -74,6 +76,8 @@ jobs:
             - **Fichier ISO** : `steveos-nas-installer.iso`
             - **Empreinte SHA-256** : `${{ steps.prep.outputs.SHA256 }}`
           files: |
+            release-assets/noos-nas-installer.iso
+            release-assets/noos-nas-installer.iso.sha256
             release-assets/steveos-nas-installer.iso
             release-assets/steveos-nas-installer.iso.sha256
           generate_release_notes: false
