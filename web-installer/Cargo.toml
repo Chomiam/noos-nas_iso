@@ -1,6 +1,6 @@
 [package]
 name = "noos-web-installer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Installateur réseau Web pour Noos NAS Edition (Catppuccin Mocha, Port 8080)"
 

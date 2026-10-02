@@ -67,13 +67,15 @@ jobs:
             Image ISO minimale bootable pour l'installation automatisée de **Noos NAS Edition**.
 
             ### 📋 Nouveautés & Correctifs :
-            - ✨ **Ajout du champ Nom complet** dans l'installateur web réseau
-            - 🛡️ **Généralisation dynamique du répertoire personnel** (`homeDirectory = /home/<username>`) évitant les comptes orphelins résiduels
-            - 🔒 **Sécurisation du script d'activation anti-suppression** NixOS (`steveosUsersSync`)
-            - 🔄 **Mise à jour en direct** de l'installateur et des paquets officiels
+            - 🚀 **Rebranding officiel complet vers Noos NAS Edition**
+            - 🎨 **Nouveau thème de démarrage GRUB Catppuccin Mocha** avec le logo Noos HD
+            - ⚡ **Installateur Web réseau (`noos-web-installer`)** avec détection automatique de l'IP LAN
+            - 🛡️ **Rétrocompatibilité totale** avec les chemins et configurations historiques
+            - 🔄 **Mise à jour en direct** depuis GitHub avec déploiement automatique
 
             ### 💾 Fichiers & Vérification d'intégrité :
-            - **Fichier ISO** : `steveos-nas-installer.iso`
+            - **Fichier ISO principal** : `noos-nas-installer.iso`
+            - **Fichier ISO rétrocompatible** : `steveos-nas-installer.iso`
             - **Empreinte SHA-256** : `${{ steps.prep.outputs.SHA256 }}`
           files: |
             release-assets/noos-nas-installer.iso
