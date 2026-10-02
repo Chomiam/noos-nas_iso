@@ -489,11 +489,11 @@ pub async fn run_installation(
         .as_deref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .unwrap_or("Administrateur STEvE_OS NAS");
+        .unwrap_or("Administrateur Noos NAS");
 
     // Écriture du fichier vars.nix personnalisé
     let vars_content = format!(
-r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
+r#"# Variables générées automatiquement par l'installateur Noos NAS
 {{
   hostName = "{}";
   timeZone = "Europe/Paris";
@@ -541,7 +541,9 @@ r#"# Variables générées automatiquement par l'installateur STEvE_OS NAS
     );
 
     let _ = std::fs::write(format!("{}/vars.nix", target_cfg_dir), &vars_content);
-    log(&manager, "Fichier /mnt/etc/nixos/vars.nix configuré avec succès.").await;
+    let _ = std::fs::write(format!("{}/vars.local.nix", target_cfg_dir), &vars_content);
+    let _ = std::fs::write(format!("{}/.vars.nix.backup", target_cfg_dir), &vars_content);
+    log(&manager, "Fichier /mnt/etc/nixos/vars.nix et sauvegardes configurés avec succès.").await;
 
     // Suivre les fichiers dans git pour que Nix Flake les prenne en compte
     let mut git_add = Command::new("git");
