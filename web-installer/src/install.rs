@@ -545,6 +545,11 @@ r#"# Variables générées automatiquement par l'installateur Noos NAS
     let _ = std::fs::write(format!("{}/.vars.nix.backup", target_cfg_dir), &vars_content);
     log(&manager, "Fichier /mnt/etc/nixos/vars.nix et sauvegardes configurés avec succès.").await;
 
+    // Configuration explicite du canal de mise à jour initial sur "stable"
+    let _ = Command::new("mkdir").args(["-p", "/mnt/var/lib/noos"]).status().await;
+    let _ = std::fs::write("/mnt/var/lib/noos/update_channel", "stable\n");
+    log(&manager, "Canal de mise à jour initial configuré sur 'stable' (/var/lib/noos/update_channel).").await;
+
     // Suivre les fichiers dans git pour que Nix Flake les prenne en compte
     let mut git_add = Command::new("git");
     git_add.args(["-C", target_cfg_dir, "add", "-A"]);

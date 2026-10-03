@@ -3,7 +3,7 @@
 let
   noos-web-installer = pkgs.rustPlatform.buildRustPackage {
     pname = "noos-web-installer";
-    version = "0.1.0";
+    version = "0.2.1";
     src = ../web-installer;
     cargoLock = {
       lockFile = ../web-installer/Cargo.lock;

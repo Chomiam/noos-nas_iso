@@ -53,7 +53,7 @@ pub async fn check_for_updates() -> UpdateCheckResponse {
     let remote_url = if Command::new("git").args(["ls-remote", "https://github.com/Chomiam/noos-nas_iso.git", "HEAD"]).output().await.map(|o| o.status.success()).unwrap_or(false) { "https://github.com/Chomiam/noos-nas_iso.git" } else { "https://github.com/Chomiam/steveos-nas_iso.git" };
 
     let remote_commit = match Command::new("git")
-        .args(["ls-remote", remote_url, "refs/heads/main"])
+        .args(["ls-remote", remote_url, "HEAD"])
         .output()
         .await
     {
@@ -103,7 +103,7 @@ pub async fn check_for_updates() -> UpdateCheckResponse {
 pub async fn apply_self_update() -> Result<String, String> {
     let remote_url = if Command::new("git").args(["ls-remote", "https://github.com/Chomiam/noos-nas_iso.git", "HEAD"]).output().await.map(|o| o.status.success()).unwrap_or(false) { "https://github.com/Chomiam/noos-nas_iso.git" } else { "https://github.com/Chomiam/steveos-nas_iso.git" };
     let remote_commit = match Command::new("git")
-        .args(["ls-remote", remote_url, "refs/heads/main"])
+        .args(["ls-remote", remote_url, "HEAD"])
         .output()
         .await
     {
