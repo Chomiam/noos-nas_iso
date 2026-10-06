@@ -10,6 +10,7 @@
   [![Auto-Update](https://img.shields.io/badge/Mises%20%C3%A0%20Jour-Auto--Update%20Temps%20R%C3%A9el-brightgreen?style=for-the-badge)](#)
   [![Storage](https://img.shields.io/badge/Syst%C3%A8me%20de%20Fichiers-Btrfs%20%7C%20Ext4-orange?style=for-the-badge)](#)
   [![Safety](https://img.shields.io/badge/S%C3%A9curit%C3%A9-Protection%20Disques%20Donn%C3%A9es-teal?style=for-the-badge)](#)
+  [![License](https://img.shields.io/badge/Licence-GNU%20GPLv3-blue?style=for-the-badge)](LICENSE)
 
   <p align="center">
     <strong>Transformez n'importe quel vieil ordinateur ou serveur dédié en un NAS souverain ultra-performant. Zéro commande complexe, zéro stress, 100% guidé depuis votre navigateur.</strong>
@@ -81,6 +82,13 @@ nix build .#iso
 ```
 
 Le fichier ISO bootable résultant sera généré dans `result/iso/` avec un lien pratique `noos-nas-installer.iso`.
+
+---
+
+## 📄 Licence
+
+Ce projet est distribué sous licence libre et copyleft **GNU General Public License v3.0 (GPLv3)**.  
+Consultez le fichier [LICENSE](LICENSE) pour plus d'informations.
 
 ---
 
