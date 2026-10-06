@@ -49,7 +49,7 @@ async fn main() {
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let bind_addr = format!("0.0.0.0:{}", port);
-    println!("🚀 STEvE_OS NAS Web Installer démarré sur http://{}", bind_addr);
+    println!("🚀 Noos NAS Web Installer démarré sur http://{}", bind_addr);
     let listener = tokio::net::TcpListener::bind(bind_addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

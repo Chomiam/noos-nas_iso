@@ -85,7 +85,7 @@ pub async fn run_installation(
         m.step = "Validation des paramètres".to_string();
         m.error = None;
         m.logs.clear();
-        m.add_log("🚀 Démarrage de l'installation de STEvE_OS NAS Edition...".into());
+        m.add_log("🚀 Démarrage de l'installation de Noos NAS Edition...".into());
         m.add_log(format!("Cible : {} | Système de fichiers : {} | Utilisateur : {}", req.disk_path, req.filesystem, req.username));
     }
 
@@ -259,7 +259,7 @@ pub async fn run_installation(
             } else if line.contains("installation finished") {
                 let mut s = state.lock().await;
                 s.current_progress = 97;
-                let step_desc = "Installation du système STEvE_OS réussie";
+                let step_desc = "Installation du système Noos NAS réussie";
                 let mut m = mgr.lock().await;
                 m.progress = 97;
                 m.step = step_desc.to_string();
@@ -411,7 +411,7 @@ pub async fn run_installation(
     }
 
     // 3. Génération et injection de la configuration NixOS
-    set_step(&manager, "Génération de la configuration matérielle STEvE_OS", 15).await;
+    set_step(&manager, "Génération de la configuration matérielle Noos NAS", 15).await;
     let mut cmd = Command::new("nixos-generate-config");
     cmd.args(["--root", "/mnt"]);
     if let Err(e) = exec_cmd(manager.clone(), cmd).await {
@@ -419,7 +419,7 @@ pub async fn run_installation(
         return;
     }
 
-    set_step(&manager, "Préparation de la configuration STEvE_OS NAS Edition", 18).await;
+    set_step(&manager, "Préparation de la configuration Noos NAS Edition", 18).await;
     log(&manager, "Copie et personnalisation des fichiers de configuration...").await;
 
     // Préparation de /mnt/etc/nixos (la configuration NixOS est installée DIRECTEMENT dans /etc/nixos/)
@@ -555,9 +555,9 @@ r#"# Variables générées automatiquement par l'installateur Noos NAS
     git_add.args(["-C", target_cfg_dir, "add", "-A"]);
     let _ = exec_cmd(manager.clone(), git_add).await;
 
-    // 4. Lancement de nixos-install avec le Flake STEvE_OS
-    set_step(&manager, "Compilation et installation du système STEvE_OS", 20).await;
-    log(&manager, "Installation du système STEvE_OS en cours... Cette étape peut prendre quelques minutes.").await;
+    // 4. Lancement de nixos-install avec le Flake Noos NAS
+    set_step(&manager, "Compilation et installation du système Noos NAS", 20).await;
+    log(&manager, "Installation du système Noos NAS en cours... Cette étape peut prendre quelques minutes.").await;
 
     let mut cmd = Command::new("nixos-install");
     cmd.args([
@@ -581,7 +581,7 @@ r#"# Variables générées automatiquement par l'installateur Noos NAS
         m.progress = 100;
         m.step = "Installation terminée avec succès !".to_string();
         m.add_log("🎉 ================================================================= 🎉".into());
-        m.add_log("🎉 Félicitations ! STEvE_OS NAS Edition est maintenant installé sur votre disque !".into());
+        m.add_log("🎉 Félicitations ! Noos NAS Edition est maintenant installé sur votre disque !".into());
         m.add_log("🎉 Retirez la clé USB / support d'installation et redémarrez votre NAS.".into());
         m.add_log("🎉 Le tableau de bord web apparaîtra automatiquement sur le port 9339.".into());
         m.add_log("🎉 ================================================================= 🎉".into());

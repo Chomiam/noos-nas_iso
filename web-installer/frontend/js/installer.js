@@ -419,7 +419,7 @@ async function confirmAndStartInstall() {
   }
 
   const confirmMsg = `⚠️ ATTENTION : DESTRUCTION DES DONNÉES\n\n` +
-    `Le disque suivant sera entièrement formaté pour STEvE_OS NAS :\n` +
+    `Le disque suivant sera entièrement formaté pour Noos NAS :\n` +
     `• Disque : ${selectedDisk.path} (${selectedDisk.model})\n` +
     `• Capacité : ${selectedDisk.size_human}\n` +
     `• Système de fichiers : ${selectedFs.toUpperCase()}\n` +
@@ -453,7 +453,7 @@ async function confirmAndStartInstall() {
     if (!res.ok || !data.ok) {
       alert("Erreur : " + (data.message || "Impossible de démarrer l'installation"));
       btn.disabled = false;
-      btn.textContent = "🚀 Démarrer l'Installation de STEvE_OS NAS";
+      btn.textContent = "🚀 Démarrer l'Installation de Noos NAS";
       return;
     }
 
@@ -462,7 +462,7 @@ async function confirmAndStartInstall() {
   } catch (err) {
     alert("Erreur de communication : " + err.message);
     btn.disabled = false;
-    btn.textContent = "🚀 Démarrer l'Installation de STEvE_OS NAS";
+    btn.textContent = "🚀 Démarrer l'Installation de Noos NAS";
   }
 }
 

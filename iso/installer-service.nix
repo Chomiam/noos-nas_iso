@@ -12,10 +12,10 @@ let
 
   noos-web-installer-wrapper = pkgs.writeShellScriptBin "noos-web-installer-wrapper" ''
     if [ -x "/run/current-web-installer/bin/noos-web-installer" ]; then
-      echo "[steveos-installer] Démarrage de la version mise à jour (/run/current-web-installer)..."
+      echo "[noos-installer] Démarrage de la version mise à jour (/run/current-web-installer)..."
       exec /run/current-web-installer/bin/noos-web-installer
     else
-      echo "[steveos-installer] Démarrage de la version embarquée dans l'ISO..."
+      echo "[noos-installer] Démarrage de la version embarquée dans l'ISO..."
       exec ${noos-web-installer}/bin/noos-web-installer
     fi
   '';
