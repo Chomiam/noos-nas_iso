@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version du tag (ex: v0.1.8)"
+        description: "Version du tag (ex: v0.2.2)"
         required: true
-        default: "v0.1.8"
+        default: "v0.2.2"
 
 permissions:
   contents: write
@@ -67,10 +67,11 @@ jobs:
             Image ISO minimale bootable pour l'installation automatisée de **Noos NAS Edition**.
 
             ### 📋 Nouveautés & Correctifs :
+            - 🔧 **Synchronisation forcée des partitions noyau (`BLKPG` / `partx` / `partprobe` / `resizepart` / `addpart`)** corrigeant l'erreur d'absence de la partition racine (`/dev/sdX2`) lors du formatage Btrfs et Ext4
+            - 🧹 **Libération approfondie du disque cible** avant partitionnement (démontage récursif, holders LVM/DM/RAID, nettoyage `wipefs` par partition et séparation `sgdisk -Z` / `sgdisk -o`)
             - 🚀 **Rebranding officiel complet vers Noos NAS Edition**
-            - 🎨 **Nouveau thème de démarrage GRUB Catppuccin Mocha** avec le logo Noos HD
+            - 🎨 **Thème de démarrage GRUB Catppuccin Mocha** avec le logo Noos HD
             - ⚡ **Installateur Web réseau (`noos-web-installer`)** avec détection automatique de l'IP LAN
-            - 🛡️ **Rétrocompatibilité totale** avec les chemins et configurations historiques
             - 🔄 **Mise à jour en direct** depuis GitHub avec déploiement automatique
 
             ### 💾 Fichiers & Vérification d'intégrité :
