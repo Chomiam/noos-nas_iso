@@ -157,7 +157,9 @@ pub async fn apply_self_update() -> Result<String, String> {
 
         // Sinon redémarrer le binaire directement
         if let Ok(current_exe) = std::env::current_exe() {
-            let target_bin = if std::path::Path::new("/run/current-web-installer/bin/steveos-web-installer").exists() {
+            let target_bin = if std::path::Path::new("/run/current-web-installer/bin/noos-web-installer").exists() {
+                std::path::PathBuf::from("/run/current-web-installer/bin/noos-web-installer")
+            } else if std::path::Path::new("/run/current-web-installer/bin/steveos-web-installer").exists() {
                 std::path::PathBuf::from("/run/current-web-installer/bin/steveos-web-installer")
             } else {
                 current_exe

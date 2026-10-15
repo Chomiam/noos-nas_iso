@@ -38,6 +38,27 @@ struct LsblkDevice {
 #[derive(Deserialize)]
 struct LsblkChild {
     mountpoints: Option<Vec<Option<String>>>,
+    children: Option<Vec<LsblkChild>>,
+}
+
+fn collect_child_mounts(children: &[LsblkChild], mounts: &mut Vec<String>, is_install_media: &mut bool) {
+    for c in children {
+        if let Some(ref cmps) = c.mountpoints {
+            for m in cmps.iter().flatten() {
+                if !m.is_empty() {
+                    if m == "/iso" || m == "/run/iso" || m == "/cdrom" || m.starts_with("/nix/.ro-store") {
+                        *is_install_media = true;
+                    }
+                    if !m.starts_with('[') && !mounts.contains(m) {
+                        mounts.push(m.clone());
+                    }
+                }
+            }
+        }
+        if let Some(ref sub) = c.children {
+            collect_child_mounts(sub, mounts, is_install_media);
+        }
+    }
 }
 
 fn format_size(bytes: u64) -> String {
@@ -110,21 +131,7 @@ pub fn list_available_disks() -> Vec<DiskInfo> {
 
         if let Some(children) = dev.children {
             parts_count = children.len();
-            for c in children {
-                if let Some(cmps) = c.mountpoints {
-                    for m in cmps.into_iter().flatten() {
-                        if !m.is_empty() {
-                            // Check if mounted as live ISO root
-                            if m == "/iso" || m == "/run/iso" || m == "/cdrom" || m.starts_with("/nix/.ro-store") {
-                                is_install_media = true;
-                            }
-                            if !m.starts_with('[') {
-                                mounts.push(m);
-                            }
-                        }
-                    }
-                }
-            }
+            collect_child_mounts(&children, &mut mounts, &mut is_install_media);
         }
 
         for m in &mounts {

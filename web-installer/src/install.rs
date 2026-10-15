@@ -300,24 +300,141 @@ pub async fn run_installation(
         }
     }
 
-    // 1. Démontage préventif et nettoyage
+    // 1. Démontage préventif et nettoyage approfondi des ressources disque
     set_step(&manager, "Nettoyage et partitionnement du disque", 5).await;
-    log(&manager, "Démontage préventif des anciens points de montage sur /mnt...").await;
+    log(&manager, "Démontage préventif des anciens points de montage et libération du disque...").await;
     let _ = Command::new("umount").args(["-R", "/mnt"]).status().await;
+    let _ = Command::new("umount").args(["-R", "-l", "/mnt"]).status().await;
     let _ = Command::new("swapoff").arg("-a").status().await;
 
-    // Démontage forcé de toutes les partitions du disque cible
-    if let Ok(entries) = std::fs::read_dir("/dev") {
-        let base_name = req.disk_path.trim_start_matches("/dev/");
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with(base_name) && name != base_name {
-                let part_dev = format!("/dev/{}", name);
-                let _ = Command::new("umount").args(["-f", &part_dev]).status().await;
+    let base_name = req.disk_path.trim_start_matches("/dev/").to_string();
+
+    // 1a. Démontage de tous les points de montage actifs liés au disque cible via /proc/mounts
+    if let Ok(mounts_content) = std::fs::read_to_string("/proc/mounts") {
+        let mut target_mounts: Vec<(String, String)> = Vec::new();
+        for line in mounts_content.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let dev = parts[0];
+                let mp = parts[1];
+                if dev.starts_with(&format!("/dev/{}", base_name))
+                    || mp == "/mnt"
+                    || mp.starts_with("/mnt/")
+                {
+                    target_mounts.push((dev.to_string(), mp.to_string()));
+                }
+            }
+        }
+        // Démonter d'abord les sous-montages les plus profonds
+        target_mounts.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        for (dev, mp) in target_mounts {
+            let _ = Command::new("umount").args(["-R", "-l", &mp]).status().await;
+            let _ = Command::new("umount").args(["-f", &dev]).status().await;
+        }
+    }
+
+    // 1b. Désactivation des swaps spécifiques au disque via /proc/swaps
+    if let Ok(swaps_content) = std::fs::read_to_string("/proc/swaps") {
+        for line in swaps_content.lines().skip(1) {
+            if let Some(dev) = line.split_whitespace().next() {
+                if dev.starts_with(&format!("/dev/{}", base_name)) {
+                    let _ = Command::new("swapoff").arg(dev).status().await;
+                }
             }
         }
     }
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // 1c. Libération des pools ZFS, volumes LVM, conteneurs DM/LUKS et grappes RAID mdadm éventuels
+    let _ = Command::new("zpool").args(["export", "-a"]).status().await;
+    let _ = Command::new("vgchange").args(["-an"]).status().await;
+
+    // Collecter toutes les partitions existantes du disque depuis /sys/class/block et /dev
+    let mut existing_parts: Vec<String> = Vec::new();
+    for dir in &["/sys/class/block", "/dev"] {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with(&base_name) && name != base_name && !existing_parts.contains(&name) {
+                    existing_parts.push(name);
+                }
+            }
+        }
+    }
+    existing_parts.sort();
+
+    // Libérer les holders noyau (/sys/class/block/<part>/holders : dm-*, md*)
+    let mut check_blocks = existing_parts.clone();
+    check_blocks.push(base_name.clone());
+    for blk in &check_blocks {
+        let holders_dir = format!("/sys/class/block/{}/holders", blk);
+        if let Ok(holders) = std::fs::read_dir(&holders_dir) {
+            for holder in holders.flatten() {
+                let h_name = holder.file_name().to_string_lossy().to_string();
+                let h_dev = format!("/dev/{}", h_name);
+                let _ = Command::new("umount").args(["-R", "-l", &h_dev]).status().await;
+                let _ = Command::new("swapoff").arg(&h_dev).status().await;
+                if h_name.starts_with("dm-") {
+                    let _ = Command::new("dmsetup").args(["remove", "-f", &h_name]).status().await;
+                } else if h_name.starts_with("md") {
+                    let _ = Command::new("mdadm").args(["--stop", &h_dev]).status().await;
+                    let _ = std::fs::write(format!("/sys/class/block/{}/md/array_state", h_name), "clear\n");
+                }
+            }
+        }
+    }
+
+    // 1d. Terminer tout processus tiers maintenant un descripteur ouvert sur /dev/<base_name>*
+    let my_pid = std::process::id();
+    if let Ok(proc_entries) = std::fs::read_dir("/proc") {
+        for proc_entry in proc_entries.flatten() {
+            if let Ok(pid) = proc_entry.file_name().to_string_lossy().parse::<u32>() {
+                if pid <= 1 || pid == my_pid {
+                    continue;
+                }
+                let fd_dir = format!("/proc/{}/fd", pid);
+                if let Ok(fds) = std::fs::read_dir(&fd_dir) {
+                    let mut holds_disk = false;
+                    for fd in fds.flatten() {
+                        if let Ok(target) = std::fs::read_link(fd.path()) {
+                            let target_str = target.to_string_lossy();
+                            if target_str.starts_with(&format!("/dev/{}", base_name)) {
+                                holds_disk = true;
+                                break;
+                            }
+                        }
+                    }
+                    if holds_disk {
+                        let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid))
+                            .unwrap_or_default()
+                            .trim()
+                            .to_string();
+                        // Ne pas tuer udevd ni nixos-install
+                        if !comm.contains("udevd") && !comm.contains("systemd") && !comm.contains("noos") {
+                            log(&manager, &format!("Fermeture du processus {} (PID {}) utilisant {}...", comm, pid, req.disk_path)).await;
+                            let _ = Command::new("kill").args(["-9", &pid.to_string()]).status().await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 1e. Démontage, effacement des signatures de chaque partition existante et suppression en mémoire noyau
+    for part_name in &existing_parts {
+        let part_dev = format!("/dev/{}", part_name);
+        let _ = Command::new("umount").args(["-R", "-l", &part_dev]).status().await;
+        let _ = Command::new("umount").args(["-f", &part_dev]).status().await;
+        let _ = Command::new("swapoff").arg(&part_dev).status().await;
+        let _ = Command::new("wipefs").args(["-a", "-f", &part_dev]).status().await;
+    }
+
+    // Suppression explicite des anciennes partitions dans la table du noyau Linux (BLKPG_DEL_PARTITION)
+    let _ = Command::new("partx").args(["-d", &req.disk_path]).status().await;
+    for pno in 1..=16 {
+        let _ = Command::new("delpart").args([&req.disk_path, &pno.to_string()]).status().await;
+    }
+    let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
     log(&manager, &format!("Effacement des anciennes signatures sur {}", req.disk_path)).await;
     let mut cmd = Command::new("wipefs");
@@ -326,10 +443,20 @@ pub async fn run_installation(
         log(&manager, &format!("Avertissement wipefs : {}", e)).await;
     }
 
+    // Destruction propre des anciennes tables GPT/MBR (séparée de la création pour éviter la collision udev)
+    let mut zap_cmd = Command::new("sgdisk");
+    zap_cmd.args(["-Z", &req.disk_path]);
+    if let Err(e) = exec_cmd(manager.clone(), zap_cmd).await {
+        log(&manager, &format!("Avertissement sgdisk -Z : {}", e)).await;
+    }
+    let _ = Command::new("partx").args(["-d", &req.disk_path]).status().await;
+    let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
     log(&manager, &format!("Création de la table de partition GPT sur {}", req.disk_path)).await;
     let mut cmd = Command::new("sgdisk");
     cmd.args([
-        "-Z",
+        "-o",
         "-n", "1:0:+1024M", "-t", "1:ef00", "-c", "1:BOOT",
         "-n", "2:0:0", "-t", "2:8300", "-c", "2:ROOT",
         &req.disk_path,
@@ -339,24 +466,132 @@ pub async fn run_installation(
         return;
     }
 
-    log(&manager, "Actualisation des partitions auprès du noyau Linux...").await;
-    let _ = Command::new("partprobe").arg(&req.disk_path).status().await;
-    let _ = Command::new("udevadm").args(["settle"]).status().await;
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-    // Détermination des chemins de partition
+    // Détermination des chemins et noms courts de partition
     let (boot_part, root_part) = if req.disk_path.chars().last().map(|c| c.is_ascii_digit()).unwrap_or(false) {
         (format!("{}p1", req.disk_path), format!("{}p2", req.disk_path))
     } else {
         (format!("{}1", req.disk_path), format!("{}2", req.disk_path))
     };
+    let boot_name = boot_part.trim_start_matches("/dev/").to_string();
+    let root_name = root_part.trim_start_matches("/dev/").to_string();
+
+    log(&manager, "Actualisation des partitions auprès du noyau Linux...").await;
+    let _ = Command::new("sync").status().await;
+    let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
+
+    // Synchronisation multi-outils de la table de partitions auprès du noyau (BLKRRPART + BLKPG)
+    async fn sync_kernel_partitions(disk_path: &str, boot_name: &str, root_name: &str) {
+        let _ = Command::new("partprobe").arg(disk_path).status().await;
+        let _ = Command::new("blockdev").args(["--rereadpt", disk_path]).status().await;
+        let _ = Command::new("partx").args(["-u", disk_path]).status().await;
+        let _ = Command::new("partx").args(["-a", disk_path]).status().await;
+
+        // Lecture directe de la géométrie GPT sur disque via `partx -g -o NR,START,SECTORS`
+        // pour forcer BLKPG_RESIZE_PARTITION (resizepart) et BLKPG_ADD_PARTITION (addpart)
+        // même si BLKRRPART a échoué avec EBUSY.
+        if let Ok(out) = Command::new("partx")
+            .args(["-g", "-o", "NR,START,SECTORS", disk_path])
+            .output()
+            .await
+        {
+            if out.status.success() {
+                let text = String::from_utf8_lossy(&out.stdout);
+                for line in text.lines() {
+                    let cols: Vec<&str> = line.split_whitespace().collect();
+                    if cols.len() == 3 {
+                        let (nr, start, sectors) = (cols[0], cols[1], cols[2]);
+                        let part_sys = if nr == "1" {
+                            format!("/sys/class/block/{}", boot_name)
+                        } else if nr == "2" {
+                            format!("/sys/class/block/{}", root_name)
+                        } else {
+                            continue;
+                        };
+
+                        if std::path::Path::new(&part_sys).exists() {
+                            // Si la partition existe déjà dans le noyau avec une ancienne taille (ex: sda1 250Go),
+                            // la redimensionner à chaud libère l'espace pour permettre l'ajout de sda2 !
+                            let _ = Command::new("resizepart").args([disk_path, nr, sectors]).status().await;
+                        } else {
+                            let _ = Command::new("addpart").args([disk_path, nr, start, sectors]).status().await;
+                            let _ = Command::new("partx").args(["-a", "--nr", nr, disk_path]).status().await;
+                            let _ = Command::new("partx").args(["-u", "--nr", nr, disk_path]).status().await;
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = Command::new("udevadm")
+            .args(["trigger", "--subsystem-match=block", "--action=change"])
+            .status()
+            .await;
+        let _ = Command::new("udevadm")
+            .args(["trigger", "--subsystem-match=block", "--action=add"])
+            .status()
+            .await;
+        let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
+
+        // Si le noyau connaît la partition dans /sys/class/block/<part>/dev mais que le noeud /dev/<part>
+        // n'a pas encore été créé par udevd, création directe du noeud bloc via mknod.
+        for part_short in [boot_name, root_name] {
+            let dev_node = format!("/dev/{}", part_short);
+            let sys_dev = format!("/sys/class/block/{}/dev", part_short);
+            if !std::path::Path::new(&dev_node).exists() {
+                if let Ok(maj_min) = std::fs::read_to_string(&sys_dev) {
+                    let parts: Vec<&str> = maj_min.trim().split(':').collect();
+                    if parts.len() == 2 {
+                        let _ = Command::new("mknod")
+                            .args(["-m", "0660", &dev_node, "b", parts[0], parts[1]])
+                            .status()
+                            .await;
+                    }
+                }
+            }
+        }
+    }
+
+    // Boucle de vérification et d'auto-réparation jusqu'à apparition effective de boot_part et root_part
+    let mut partitions_ready = false;
+    for attempt in 1..=15 {
+        sync_kernel_partitions(&req.disk_path, &boot_name, &root_name).await;
+        if std::path::Path::new(&boot_part).exists() && std::path::Path::new(&root_part).exists() {
+            partitions_ready = true;
+            break;
+        }
+        log(
+            &manager,
+            &format!(
+                "Attente de la création des périphériques {} et {} par le noyau (tentative {}/15)...",
+                boot_part, root_part, attempt
+            ),
+        )
+        .await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
+
+    if !partitions_ready {
+        fail_install(
+            manager,
+            format!(
+                "Les partitions {} et {} n'ont pas pu être créées par le noyau Linux (le disque {} est peut-être verrouillé ou utilisé par le système).",
+                boot_part, root_part, req.disk_path
+            ),
+        )
+        .await;
+        return;
+    }
 
     log(&manager, &format!("Partitions détectées : Boot={} | Racine={}", boot_part, root_part)).await;
 
     // 2. Formatage
     set_step(&manager, "Formatage des partitions", 8).await;
-    let _ = Command::new("umount").args(["-f", &boot_part]).status().await;
-    let _ = Command::new("umount").args(["-f", &root_part]).status().await;
+    let _ = Command::new("umount").args(["-R", "-l", &boot_part]).status().await;
+    let _ = Command::new("umount").args(["-R", "-l", &root_part]).status().await;
+    let _ = Command::new("wipefs").args(["-a", "-f", &boot_part]).status().await;
+    let _ = Command::new("wipefs").args(["-a", "-f", &root_part]).status().await;
+    let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
+
     log(&manager, &format!("Formatage FAT32 de la partition EFI {}", boot_part)).await;
     let mut cmd = Command::new("mkfs.vfat");
     cmd.args(["-F", "32", "-n", "BOOT", &boot_part]);
@@ -373,27 +608,47 @@ pub async fn run_installation(
             fail_install(manager, e).await;
             return;
         }
+        let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
 
         // Création des sous-volumes Btrfs
         set_step(&manager, "Création des sous-volumes Btrfs (@, @home, @nix, @snapshots)", 11).await;
         let _ = Command::new("mkdir").args(["-p", "/mnt"]).status().await;
-        let _ = Command::new("mount").args(["-t", "btrfs", &root_part, "/mnt"]).status().await;
+        let mut mount_root = Command::new("mount");
+        mount_root.args(["-t", "btrfs", &root_part, "/mnt"]);
+        if let Err(e) = exec_cmd(manager.clone(), mount_root).await {
+            fail_install(manager, e).await;
+            return;
+        }
 
-        let _ = Command::new("btrfs").args(["subvolume", "create", "/mnt/@"]).status().await;
-        let _ = Command::new("btrfs").args(["subvolume", "create", "/mnt/@home"]).status().await;
-        let _ = Command::new("btrfs").args(["subvolume", "create", "/mnt/@nix"]).status().await;
-        let _ = Command::new("btrfs").args(["subvolume", "create", "/mnt/@snapshots"]).status().await;
+        for subvol in ["/mnt/@", "/mnt/@home", "/mnt/@nix", "/mnt/@snapshots"] {
+            let mut sub_cmd = Command::new("btrfs");
+            sub_cmd.args(["subvolume", "create", subvol]);
+            if let Err(e) = exec_cmd(manager.clone(), sub_cmd).await {
+                fail_install(manager, e).await;
+                return;
+            }
+        }
 
         let _ = Command::new("umount").arg("/mnt").status().await;
 
         // Montage définitif
         set_step(&manager, "Montage des systèmes de fichiers", 13).await;
-        let _ = Command::new("mount").args(["-o", "subvol=@,compress=zstd,noatime", &root_part, "/mnt"]).status().await;
+        let mut m_at = Command::new("mount");
+        m_at.args(["-o", "subvol=@,compress=zstd,noatime", &root_part, "/mnt"]);
+        if let Err(e) = exec_cmd(manager.clone(), m_at).await {
+            fail_install(manager, e).await;
+            return;
+        }
         let _ = Command::new("mkdir").args(["-p", "/mnt/home", "/mnt/nix", "/mnt/.snapshots", "/mnt/boot"]).status().await;
         let _ = Command::new("mount").args(["-o", "subvol=@home,compress=zstd", &root_part, "/mnt/home"]).status().await;
         let _ = Command::new("mount").args(["-o", "subvol=@nix,compress=zstd,noatime", &root_part, "/mnt/nix"]).status().await;
         let _ = Command::new("mount").args(["-o", "subvol=@snapshots,compress=zstd", &root_part, "/mnt/.snapshots"]).status().await;
-        let _ = Command::new("mount").args([&boot_part, "/mnt/boot"]).status().await;
+        let mut m_boot = Command::new("mount");
+        m_boot.args([&boot_part, "/mnt/boot"]);
+        if let Err(e) = exec_cmd(manager.clone(), m_boot).await {
+            fail_install(manager, e).await;
+            return;
+        }
     } else {
         log(&manager, &format!("Formatage Ext4 de la partition racine {}", root_part)).await;
         let mut cmd = Command::new("mkfs.ext4");
@@ -402,12 +657,23 @@ pub async fn run_installation(
             fail_install(manager, e).await;
             return;
         }
+        let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
 
         set_step(&manager, "Montage des systèmes de fichiers", 13).await;
         let _ = Command::new("mkdir").args(["-p", "/mnt"]).status().await;
-        let _ = Command::new("mount").args([&root_part, "/mnt"]).status().await;
+        let mut m_root = Command::new("mount");
+        m_root.args([&root_part, "/mnt"]);
+        if let Err(e) = exec_cmd(manager.clone(), m_root).await {
+            fail_install(manager, e).await;
+            return;
+        }
         let _ = Command::new("mkdir").args(["-p", "/mnt/boot"]).status().await;
-        let _ = Command::new("mount").args([&boot_part, "/mnt/boot"]).status().await;
+        let mut m_boot = Command::new("mount");
+        m_boot.args([&boot_part, "/mnt/boot"]);
+        if let Err(e) = exec_cmd(manager.clone(), m_boot).await {
+            fail_install(manager, e).await;
+            return;
+        }
     }
 
     // 3. Génération et injection de la configuration NixOS

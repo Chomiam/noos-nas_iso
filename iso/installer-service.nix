@@ -29,7 +29,11 @@ in
     pkgs.e2fsprogs
     pkgs.dosfstools
     pkgs.gptfdisk
+    pkgs.parted
     pkgs.util-linux
+    pkgs.lvm2
+    pkgs.mdadm
+    pkgs.psmisc
     pkgs.openssl
     pkgs.nixos-install-tools
     pkgs.nettools
@@ -47,6 +51,10 @@ in
     path = with pkgs; [
       util-linux
       gptfdisk
+      parted
+      lvm2
+      mdadm
+      psmisc
       dosfstools
       btrfs-progs
       e2fsprogs
