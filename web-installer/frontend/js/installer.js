@@ -42,10 +42,10 @@ async function checkUpdates(manual = false) {
     if (!res.ok) throw new Error("Erreur HTTP lors de la vérification");
     const data = await res.json();
 
-    const hasAlreadyUpdated = (sessionStorage.getItem("noos_updated") || sessionStorage.getItem("steveos_updated")) === "true";
+    const hasAlreadyUpdated = sessionStorage.getItem("noos_updated") === "true";
 
     if (data.update_available && !hasAlreadyUpdated) {
-      sessionStorage.setItem("noos_updated", "true"); sessionStorage.setItem("steveos_updated", "true");
+      sessionStorage.setItem("noos_updated", "true");
       if (modal) {
         modal.style.display = "flex";
         modal.style.opacity = "1";
@@ -88,7 +88,7 @@ async function checkUpdates(manual = false) {
         spinner.style.display = "none";
         iconDone.style.display = "block";
         title.textContent = "Installateur à jour";
-        desc.textContent = data.message || "Vous disposez de la dernière version du dépôt steveos-nas_iso.";
+        desc.textContent = data.message || "Vous disposez de la dernière version du dépôt noos-nas_iso.";
         
         setTimeout(() => {
           modal.style.opacity = "0";

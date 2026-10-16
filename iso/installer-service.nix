@@ -48,7 +48,6 @@ in
 
   systemd.services.noos-web-installer = {
     description = "Noos NAS Web Installer Daemon";
-    aliases = [ "steveos-web-installer.service" ];
     after = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
     path = with pkgs; [

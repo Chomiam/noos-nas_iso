@@ -13,22 +13,18 @@ pub struct UpdateCheckResponse {
 
 pub fn get_local_commit() -> String {
     // 0. Priorité absolue au commit dynamique écrit en RAM lors d'un update
-    for path in &["/run/noos-current-commit", "/run/steveos-current-commit"] {
-        if let Ok(c) = std::fs::read_to_string(path) {
-            let trimmed = c.trim().to_string();
-            if !trimmed.is_empty() && trimmed != "unknown" {
-                return trimmed;
-            }
+    if let Ok(c) = std::fs::read_to_string("/run/noos-current-commit") {
+        let trimmed = c.trim().to_string();
+        if !trimmed.is_empty() && trimmed != "unknown" {
+            return trimmed;
         }
     }
 
     // 1. Priorité au fichier etc écrit par le flake NixOS
-    for path in &["/etc/noos-iso-commit", "/etc/steveos-iso-commit"] {
-        if let Ok(c) = std::fs::read_to_string(path) {
-            let trimmed = c.trim().to_string();
-            if !trimmed.is_empty() && trimmed != "unknown" {
-                return trimmed;
-            }
+    if let Ok(c) = std::fs::read_to_string("/etc/noos-iso-commit") {
+        let trimmed = c.trim().to_string();
+        if !trimmed.is_empty() && trimmed != "unknown" {
+            return trimmed;
         }
     }
 
@@ -50,7 +46,7 @@ pub fn get_local_commit() -> String {
 
 pub async fn check_for_updates() -> UpdateCheckResponse {
     let local_commit = get_local_commit();
-    let remote_url = if Command::new("git").args(["ls-remote", "https://github.com/Chomiam/noos-nas_iso.git", "HEAD"]).output().await.map(|o| o.status.success()).unwrap_or(false) { "https://github.com/Chomiam/noos-nas_iso.git" } else { "https://github.com/Chomiam/steveos-nas_iso.git" };
+    let remote_url = "https://github.com/Chomiam/noos-nas_iso.git";
 
     let remote_commit = match Command::new("git")
         .args(["ls-remote", remote_url, "HEAD"])
@@ -101,7 +97,7 @@ pub async fn check_for_updates() -> UpdateCheckResponse {
 }
 
 pub async fn apply_self_update() -> Result<String, String> {
-    let remote_url = if Command::new("git").args(["ls-remote", "https://github.com/Chomiam/noos-nas_iso.git", "HEAD"]).output().await.map(|o| o.status.success()).unwrap_or(false) { "https://github.com/Chomiam/noos-nas_iso.git" } else { "https://github.com/Chomiam/steveos-nas_iso.git" };
+    let remote_url = "https://github.com/Chomiam/noos-nas_iso.git";
     let remote_commit = match Command::new("git")
         .args(["ls-remote", remote_url, "HEAD"])
         .output()
@@ -119,7 +115,7 @@ pub async fn apply_self_update() -> Result<String, String> {
     cmd.args([
         "build",
         "--refresh",
-        if Command::new("git").args(["ls-remote", "https://github.com/Chomiam/noos-nas_iso.git", "HEAD"]).output().await.map(|o| o.status.success()).unwrap_or(false) { "github:Chomiam/noos-nas_iso#web-installer" } else { "github:Chomiam/steveos-nas_iso#web-installer" },
+        "github:Chomiam/noos-nas_iso#web-installer",
         "--out-link",
         "/run/current-web-installer",
     ]);
@@ -137,7 +133,6 @@ pub async fn apply_self_update() -> Result<String, String> {
     // Sauvegarder le commit pour briser toute boucle de détection
     if !remote_commit.is_empty() {
         let _ = std::fs::write("/run/noos-current-commit", &remote_commit);
-        let _ = std::fs::write("/run/steveos-current-commit", &remote_commit);
     }
 
     // 2. Déclenchement du redémarrage du service ou du processus
@@ -159,8 +154,6 @@ pub async fn apply_self_update() -> Result<String, String> {
         if let Ok(current_exe) = std::env::current_exe() {
             let target_bin = if std::path::Path::new("/run/current-web-installer/bin/noos-web-installer").exists() {
                 std::path::PathBuf::from("/run/current-web-installer/bin/noos-web-installer")
-            } else if std::path::Path::new("/run/current-web-installer/bin/steveos-web-installer").exists() {
-                std::path::PathBuf::from("/run/current-web-installer/bin/steveos-web-installer")
             } else {
                 current_exe
             };

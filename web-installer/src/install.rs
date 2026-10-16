@@ -1019,8 +1019,6 @@ pub async fn run_installation(
     // 1.5 Vérification préventive de la source de configuration Noos NAS (locale ou GitHub) AVANT de toucher au disque
     let embedded_source = if std::path::Path::new("/etc/noos-nas-source/flake.nix").exists() {
         Some("/etc/noos-nas-source")
-    } else if std::path::Path::new("/etc/steveos-nas-source/flake.nix").exists() {
-        Some("/etc/steveos-nas-source")
     } else {
         None
     };
@@ -2267,13 +2265,9 @@ pub async fn run_installation(
     )
     .await;
 
-    // Création des liens symboliques de rétrocompatibilité
+    // Création du lien symbolique de sous-répertoire
     let _ = Command::new("ln")
         .args(["-sfn", ".", &format!("{}/noos-nas", target_cfg_dir)])
-        .status()
-        .await;
-    let _ = Command::new("ln")
-        .args(["-sfn", ".", &format!("{}/steveos-nas", target_cfg_dir)])
         .status()
         .await;
 

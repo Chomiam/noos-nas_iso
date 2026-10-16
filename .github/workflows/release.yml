@@ -43,11 +43,9 @@ jobs:
           mkdir -p release-assets
           ISO_PATH=$(ls result/iso/*.iso | head -n1)
           cp "$ISO_PATH" release-assets/noos-nas-installer.iso
-          cp "$ISO_PATH" release-assets/steveos-nas-installer.iso
           cd release-assets
           sha256sum noos-nas-installer.iso > noos-nas-installer.iso.sha256
-          sha256sum steveos-nas-installer.iso > steveos-nas-installer.iso.sha256
-          echo "SHA256=$(cat steveos-nas-installer.iso.sha256 | awk '{print $1}')" >> $GITHUB_OUTPUT
+          echo "SHA256=$(cat noos-nas-installer.iso.sha256 | awk '{print $1}')" >> $GITHUB_OUTPUT
           
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ github.event.inputs.tag }}"
@@ -75,14 +73,11 @@ jobs:
             - ⚡ **Installateur Web réseau (`noos-web-installer`)** avec détection automatique de l'IP LAN
 
             ### 💾 Fichiers & Vérification d'intégrité :
-            - **Fichier ISO principal** : `noos-nas-installer.iso`
-            - **Fichier ISO rétrocompatible** : `steveos-nas-installer.iso`
+            - **Fichier ISO** : `noos-nas-installer.iso`
             - **Empreinte SHA-256** : `${{ steps.prep.outputs.SHA256 }}`
           files: |
             release-assets/noos-nas-installer.iso
             release-assets/noos-nas-installer.iso.sha256
-            release-assets/steveos-nas-installer.iso
-            release-assets/steveos-nas-installer.iso.sha256
           generate_release_notes: false
           draft: false
           prerelease: false

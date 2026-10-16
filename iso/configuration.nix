@@ -38,11 +38,6 @@ in
     else if self != null && self ? dirtyRev then self.dirtyRev
     else "b870c77b9c614da03252827c616159db287167ef";
 
-  environment.etc."steveos-iso-commit".text =
-    if self != null && self ? rev then self.rev
-    else if self != null && self ? dirtyRev then self.dirtyRev
-    else "b870c77b9c614da03252827c616159db287167ef";
-
   # Paramètres de l'image ISO
   image.fileName = lib.mkForce "noos-nas-installer.iso";
   isoImage.volumeID = lib.mkForce "NOOS_NAS";

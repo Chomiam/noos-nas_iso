@@ -17,7 +17,6 @@ pkgs.stdenvNoCC.mkDerivation {
     cp ${./assets/logo.png} $out/logo.png
     cp ${./assets/background.png} $out/background.png
     cp ${./assets/installer.png} $out/icons/installer.png
-    cp ${./assets/steveos.png} $out/icons/steveos.png
     cp ${./assets/noos.png} $out/icons/noos.png
 
     # Remplacer theme.txt avec les positions optimisées pour le logo Noos

@@ -1,31 +1,31 @@
 ---
-name: steveos-knowledge
+name: noos-knowledge
 description: >-
   Base de connaissances, retours d'expérience (REX), bonnes pratiques et pièges critiques
-  à éviter sur l'écosystème STEvE_OS (steveos-nas, steveos-nas-dashboard, steve_nas_eggs).
+  à éviter sur l'écosystème Noos (noos-nas, noos-nas-dashboard, steve_nas_eggs).
   Activer ce skill pour toute tâche d'architecture, de débogage, de build, de mise à jour,
   de conteneurisation Docker/Eggs ou d'intégration NixOS.
 ---
 
-# 🧠 Base de Connaissances & Retours d'Expérience (REX) — Écosystème STEvE_OS
+# 🧠 Base de Connaissances & Retours d'Expérience (REX) — Écosystème Noos
 
-Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, les bonnes pratiques de développement et la liste des erreurs critiques à ne jamais reproduire sur les projets liés à **STEvE_OS**.
+Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, les bonnes pratiques de développement et la liste des erreurs critiques à ne jamais reproduire sur les projets liés à **Noos**.
 
 ---
 
-## 🏛️ 1. Architecture des Composants STEvE_OS
+## 🏛️ 1. Architecture des Composants Noos
 
 | Dépôt / Projet | Rôle & Technologies | Emplacement local |
 | :--- | :--- | :--- |
-| **`steveos-nas`** (`steve_os-nix`) | Configuration déclarative NixOS du NAS (Modules, Flake, services système, virtualisation, réseau, stockage ZFS/Btrfs). | `/home/chomiam/Projects/steveos-nas` |
-| **`steveos-nas-dashboard`** | Tableau de bord Web réactif & API haute performance (Backend Rust Axum, Frontend Vanilla JS/CSS Catppuccin Mocha). | `/home/chomiam/Projects/steveos-nas-dashboard` |
-| **`steveos_nas_store`** | Catalogue et templates Docker Compose officiels pour l'App Store du NAS (Nextcloud, Jellyfin, AdGuard Home, Vaultwarden, etc.). | `/home/chomiam/Projects/steveos_nas_store` (GitHub: `Chomiam/steveos_nas_store`) |
+| **`noos-nas`** (`Noos-nix`) | Configuration déclarative NixOS du NAS (Modules, Flake, services système, virtualisation, réseau, stockage ZFS/Btrfs). | `/home/chomiam/Projects/noos-nas` |
+| **`noos-nas-dashboard`** | Tableau de bord Web réactif & API haute performance (Backend Rust Axum, Frontend Vanilla JS/CSS Catppuccin Mocha). | `/home/chomiam/Projects/noos-nas-dashboard` |
+| **`noos_nas_store`** | Catalogue et templates Docker Compose officiels pour l'App Store du NAS (Nextcloud, Jellyfin, AdGuard Home, Vaultwarden, etc.). | `/home/chomiam/Projects/noos_nas_store` (GitHub: `Chomiam/noos_nas_store`) |
 | **`steve_nas_eggs`** | Catalogue d'Eggs de serveurs de jeux conteneurisés Docker (Minecraft, Palworld, Valheim, Terraria, CS2, Enshrouded, etc.). | Dépôt GitHub officiel `Chomiam/steve_nas_eggs` |
 
 ### Principes d'intégration :
-- `steveos-nas` intègre `steveos-nas-dashboard` via une entrée Flake (`flake.nix` / `flake.lock`).
-- `steveos-nas-dashboard` interroge dynamiquement le dépôt distant `steveos_nas_store` pour l'installation en 1 clic des applications Docker.
-- Les binaires du Dashboard sont construits par **GitHub Actions** et hébergés sur le cache binaire Cachix officiel `steveos` (`https://steveos.cachix.org`).
+- `noos-nas` intègre `noos-nas-dashboard` via une entrée Flake (`flake.nix` / `flake.lock`).
+- `noos-nas-dashboard` interroge dynamiquement le dépôt distant `noos_nas_store` pour l'installation en 1 clic des applications Docker.
+- Les binaires du Dashboard sont construits par **GitHub Actions** et hébergés sur le cache binaire Cachix officiel `Noos` (`https://Noos.cachix.org`).
 - Le Dashboard communique en local avec Docker, systemd, ZFS, WireGuard et NixOS via des commandes CLI isolées et des sockets IPC.
 
 ---
@@ -36,10 +36,10 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
 1. **Pas de `git ls-remote` synchrone sur de gros dépôts (`nixpkgs`) :**
    - *Erreur passée* : Exécuter `git ls-remote https://github.com/nixos/nixpkgs` lors de chaque vérification de mise à jour.
    - *Impact* : Blocage du thread HTTP serveur pendant 20 à 30 secondes, interface web figée sur `Vérification de l'état du système...` avec des tirets `--`.
-   - *Règle* : `nixpkgs` est géré et verrouillé par `flake.lock` dans `steve_os-nix`. Ne jamais sonder `nixpkgs` à distance via `git ls-remote`.
+   - *Règle* : `nixpkgs` est géré et verrouillé par `flake.lock` dans `Noos-nix`. Ne jamais sonder `nixpkgs` à distance via `git ls-remote`.
 2. **Double comptage des composants internes :**
    - *Erreur passée* : Détecter une mise à jour du Dashboard dans sa télémétrie dédiée ET le compter une seconde fois comme paquet système tiers dans `package_updates_count`.
-   - *Règle* : Exclure systématiquement les composants internes suivis (`steveos-nas-dashboard`) du balayage générique des paquets.
+   - *Règle* : Exclure systématiquement les composants internes suivis (`noos-nas-dashboard`) du balayage générique des paquets.
 
 ### B. Frontend JavaScript & Résilience UI
 3. **Préférer `Promise.allSettled` à `Promise.all` pour les rafraîchissements globaux :**
@@ -88,7 +88,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
       - Toujours synchroniser l'onglet et le sous-onglet actif avec `window.location.hash` (`#storage`, `#files`, `#containers/store`, `#network/samba`, etc.) et avec `localStorage`.
       - Supporter les boutons Précédent/Suivant de l'historique du navigateur via `window.addEventListener("hashchange", ...)`.
       - Appliquer un pré-rendu anti-flicker dès l'analyse DOM (`DOMContentLoaded` et attribut `data-initial-tab` dans l'en-tête HTML) pour masquer instantanément l'accueil et activer le bon onglet avant même l'appel réseau `/api/auth/me`.
-      - Sauvegarder et restaurer le dossier courant de l'explorateur de fichiers (`steveos_files_path`) dans `localStorage`.
+      - Sauvegarder et restaurer le dossier courant de l'explorateur de fichiers (`Noos_files_path`) dans `localStorage`.
 
 11. **Superposition et plan d'affichage des notifications Toast (`z-index` & `pointer-events`) :**
     - *Erreur passée* : Définir `#toast-container` avec `z-index: 999` tandis que les fenêtres modales et backdrops ont un `z-index: 2000`.
@@ -129,7 +129,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
 6. **Streaming média (Lecteurs Audio, Vidéo, Visionneuse) :**
    - *Erreur passée* : Les balises natives `<audio>`, `<video>` et `<img>` n'envoient pas les en-têtes HTTP `Authorization: Bearer ...`.
    - *Règle* :
-     - Supporter l'authentification par paramètre d'URL `?token=...` et la synchronisation de cookie de session `steveos_token`.
+     - Supporter l'authentification par paramètre d'URL `?token=...` et la synchronisation de cookie de session `Noos_token`.
      - Désactiver le `Cache-Control: no-store` pour les flux multimédias avec en-têtes `Accept-Ranges: bytes` afin de permettre le scrubbing (sauts de lecture dans la vidéo/audio).
 
 12. **Lecteurs Média Flottants (Picture-in-Picture) et Fenêtres Déplaçables :**
@@ -157,7 +157,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
       1. Toujours propager `user = vars.user.username` depuis `hosts/nas/configuration.nix` vers les services applicatifs.
       2. Dans l'installateur web (`install.rs`), toujours injecter explicitement `fullName` et `homeDirectory = "/home/${username}"` dans `vars.nix`.
       3. Dans `options.nix` et `configuration.nix`, dériver dynamiquement `homeDirectory = "/home/${username}"` si non spécifié, sans jamais hardcoder de chemin personnel en fallback.
-      4. Dans le script d'activation `steveosUsersSync` (`modules/core/users.nix`), exclure impérativement `[ "$h" != "${u.homeDirectory}" ]` lors du balayage de `/home/*` pour éviter toute création parasite.
+      4. Dans le script d'activation `NoosUsersSync` (`modules/core/users.nix`), exclure impérativement `[ "$h" != "${u.homeDirectory}" ]` lors du balayage de `/home/*` pour éviter toute création parasite.
 11. **Isolation stricte de la page de connexion & Déconnexion atomique (Dashboard) :**
     - *Erreur passée* : Déclarer l'écran de connexion sous forme d'un simple overlay semi-transparent (`backdrop-filter: blur(...)`) au-dessus de la structure complète du dashboard (`<header>`, `<nav>`, `<main>`), tout en masquant le modal par défaut (`style="display:none;"`). Lors de la déconnexion (`logoutUser`), ne faire que supprimer les jetons et réafficher le modal sans vider le DOM, sans couper le polling et sans recharger la page.
     - *Conséquences* : Le dashboard complet, ses graphiques, ses disques et son arborescence restent visibles et chargés en arrière-plan sous le modal de connexion. L'utilisateur a l'impression que la déconnexion n'a pas eu lieu tant qu'il n'actualise pas manuellement la page (`F5`).
@@ -177,7 +177,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
     - *Erreur passée* : Développer une nouvelle version du Dashboard (`noos-nas-dashboard`), attendre le succès du workflow GitHub Actions Cachix, mais omettre de propager le hash mis à jour dans `flake.lock` de la configuration de l'OS (`noos-nas`).
     - *Impact* : Sur le NAS de l'utilisateur, le processus de mise à jour s'exécute sans erreur (`Code 0`) car `nixos-rebuild switch` applique fidèlement la configuration déclarative existante, mais le dashboard redémarre sur l'ancienne version car `flake.lock` était resté figé sur l'ancien commit.
     - *Règles & Triple Verrou* :
-      1. **Script de release automatisé** : Toujours utiliser [`scripts/release.sh`](file:///home/chomiam/Projects/steveos-nas-dashboard/scripts/release.sh) qui enchaîne automatiquement la compilation Cachix et la mise à jour de `flake.lock` dans `../steveos-nas` suivi de son push sur `main`.
+      1. **Script de release automatisé** : Toujours utiliser [`scripts/release.sh`](file:///home/chomiam/Projects/noos-nas-dashboard/scripts/release.sh) qui enchaîne automatiquement la compilation Cachix et la mise à jour de `flake.lock` dans `../noos-nas` suivi de son push sur `main`.
       2. **Résilience proactive du Dashboard** : Dans `src/updates.rs`, exécuter systématiquement `nix flake lock --update-input noos-nas-dashboard` avant `nixos-rebuild switch` dès qu'une mise à niveau du dashboard est signalée.
       3. **Télémétrie explicite** : Présenter dans l'interface la version active, la version verrouillée par l'OS et la dernière version disponible sur GitHub.
 
@@ -186,7 +186,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
 ### E. Surveillance Matérielle, Ventilation & Sécurité Thermique
 13. **Zéro composant matériel en dur (CPU / Carte Mère / GPU) :**
     - *Erreur passée* : Définir des valeurs de secours fixes (Dual Xeon E5-2650 v4, Huananzhi X99, Intel Arc A380) dans le backend Rust ou l'UI.
-    - *Impact* : Tout utilisateur installant STEvE_OS sur une machine AMD Ryzen ou Intel Core voyait une fausse carte mère et un faux GPU affichés.
+    - *Impact* : Tout utilisateur installant Noos sur une machine AMD Ryzen ou Intel Core voyait une fausse carte mère et un faux GPU affichés.
     - *Règle* : Détecter dynamiquement les composants via Linux sysfs (`/sys/class/dmi/id/`, `/sys/bus/pci/devices/*`, `/proc/cpuinfo`, `/sys/class/drm/`).
 14. **Protection Failsafe Thermique Inviolable (80°C = 100% PWM) :**
     - *Règle fondamentale* : Dans tout démon d'asservissement des ventilateurs, forcer inconditionnellement la vitesse à 100% (255/255) si n'importe quelle sonde franchit 80°C, afin d'écarter tout risque de destruction matérielle par mauvaise courbe utilisateur.
@@ -227,26 +227,26 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
       2. Le toast flottant en bas à droite ne doit afficher qu'un résumé concis d'une seule ligne et un bouton `🔍 Voir le rapport d'erreur` pour rouvrir la modale.
       3. Pour le port 53 (AdGuard Home, Pi-hole) : sous Linux, Docker tente de lier `0.0.0.0:53`, ce qui échoue si `systemd-resolved` écoute sur `127.0.0.53:53` ou si `dnsmasq` écoute sur `192.168.122.1:53`. La solution pérenne sous NixOS est de désactiver le stub listener local (`services.resolved.extraConfig = "DNSStubListener=no\n";`) tout en maintenant des résolveurs amonts dans `networking.nameservers` afin que le NAS conserve son accès Internet en toutes circonstances.
 
-20. **Publication impérative des Docker Compose sur `steveos_nas_store`, format standard et protocoles réseaux :**
+20. **Publication impérative des Docker Compose sur `noos_nas_store`, format standard et protocoles réseaux :**
     - *Erreurs passées* :
-      1. Modifier localement ou générer un `docker-compose.yml` sans le committer ni le pousser sur le dépôt GitHub officiel [`Chomiam/steveos_nas_store`](https://github.com/Chomiam/steveos_nas_store). Le dashboard téléchargeant les manifests et compose directement depuis GitHub (`raw.githubusercontent.com`), toute omission laissait les NAS déployer des versions obsolètes, erronées ou cassées.
+      1. Modifier localement ou générer un `docker-compose.yml` sans le committer ni le pousser sur le dépôt GitHub officiel [`Chomiam/noos_nas_store`](https://github.com/Chomiam/noos_nas_store). Le dashboard téléchargeant les manifests et compose directement depuis GitHub (`raw.githubusercontent.com`), toute omission laissait les NAS déployer des versions obsolètes, erronées ou cassées.
       2. Mappages incomplets de protocoles : pour les services DNS (AdGuard Home, Pi-hole), mapper uniquement `53:53` (TCP seul sous Docker). Or 99% du trafic DNS standard s'exécute en UDP, provoquant un échec total de résolution DNS des clients.
       3. Omission des ports d'administration Web : mapper uniquement le port applicatif (53) sans mapper le port d'initialisation et d'interface web (`3000:3000`), entraînant un chargement infini dans le navigateur (`http://IP:3000`).
       4. Déclarer des volumes inadaptés (ex: `/data` au lieu de `/opt/adguardhome/work` et `/opt/adguardhome/conf`).
     - *Règles obligatoires* :
-      1. **Dépôt centralisé** : Toute modification sur une application Docker du store (compose, manifest, icône) DOIT être commitée et poussée immédiatement sur `https://github.com/Chomiam/steveos_nas_store`.
-      2. **Format standard avec commentaires d'en-tête décoratifs** : Chaque `compose.yaml` doit obligatoirement respecter l'en-tête officiel STEvE_OS avec métadonnées (`Application`, `Port hôte`, `Données hôte`, `Mode`) et bloc de transition NixOS en pied de page.
+      1. **Dépôt centralisé** : Toute modification sur une application Docker du store (compose, manifest, icône) DOIT être commitée et poussée immédiatement sur `https://github.com/Chomiam/noos_nas_store`.
+      2. **Format standard avec commentaires d'en-tête décoratifs** : Chaque `compose.yaml` doit obligatoirement respecter l'en-tête officiel Noos avec métadonnées (`Application`, `Port hôte`, `Données hôte`, `Mode`) et bloc de transition NixOS en pied de page.
       3. **Ports & Protocoles stricts** : Spécifier explicitement `/tcp` et `/udp` dès qu'un service écoute sur les deux (notamment port 53). Aligner `default_port` dans `manifest.json` et `store.json` sur le port réel de l'interface Web (ex: 3000 pour AdGuard Home).
 
 21. **Gestion des Conteneurs Applicatifs vs Serveurs de Jeux & Suppression avec confirmation :**
     - *Erreurs passées* :
       1. Affichage en grille désordonné : une grille de cartes volumineuses rendait la lecture difficile dès qu'un conteneur avait un nom ou une image un peu longue, masquait les boutons d'actions et manquait de compacité.
-      2. Pollution de l'onglet Docker Compose par les conteneurs de serveurs de jeux (`steveos-game*`) : ces conteneurs sont déjà gérés avec un cycle de vie complet dans la section Serveurs de Jeux / Eggs. Leur présence dans l'onglet applicatif créait de la confusion.
+      2. Pollution de l'onglet Docker Compose par les conteneurs de serveurs de jeux (`Noos-game*`) : ces conteneurs sont déjà gérés avec un cycle de vie complet dans la section Serveurs de Jeux / Eggs. Leur présence dans l'onglet applicatif créait de la confusion.
       3. Absence d'un bouton de suppression de conteneur : l'utilisateur était obligé d'utiliser la CLI pour supprimer un conteneur arrêté ou défectueux.
       4. Suppression brutale sans confirmation ni option pour purger l'image : risque d'effacement accidentel ou accumulation d'images orphelines volumineuses sur le disque hôte.
     - *Règles & Patterns* :
       1. **Affichage en Lignes (`.docker-container-row`)** : Vue horizontale compacte, bordure latérale d'état (vert/orange), nom tronqué avec tooltip `max-width`, image et ports bien séparés, et boutons d'actions iconiques alignés sur la droite.
-      2. **Filtrage contextuel étanche** : Toujours filtrer `!name.startsWith("steveos-game")` dans `loadDockerContainers()` pour isoler les conteneurs applicatifs de la boutique des conteneurs de jeux.
+      2. **Filtrage contextuel étanche** : Toujours filtrer `!name.startsWith("Noos-game")` dans `loadDockerContainers()` pour isoler les conteneurs applicatifs de la boutique des conteneurs de jeux.
       3. **Suppression sécurisée avec modale (#modal-delete-docker)** : Confirmation obligatoire avec rappel de la préservation des volumes sur l'hôte et case à cocher pour purger l'image Docker (`delete_image=true`). Le backend exécute un `docker compose down` si un fichier compose existe ou un `docker stop` + `docker rm` en fallback, suivi de `docker rmi` si demandé.
 
 22. **Libération Totale du Port 53 pour AdGuard Home / Pi-hole (systemd-resolved, libvirt & sudo runtime) :**
@@ -264,7 +264,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
       1. Dans `resolve_and_activate_block_device`, lorsqu'un chemin complet de volume logique LVM (`/dev/vg1/storage`) était passé, le Cas A (`vgs vg1/storage`) échouait (car `vgs` n'attend qu'un nom de VG). Le Cas B prenait le relais mais ne chargeait pas les modules noyau RAID (`dm-raid`, `raid456`, etc.). Sans ces modules noyau, `lvchange -ay` échoue silencieusement sous Linux car le kernel ne peut pas instancier la cible device-mapper RAID5.
       2. Si le volume logique `storage` n'avait pas encore été alloué dans le groupe `vg1`, le Cas B ne procédait à aucune création (`lvcreate`) lors d'une requête de formatage forcé (`force_format == true`), contrairement au Cas A.
       3. Dépendance aveugle envers udev : `lvchange` active le device-mapper, mais les liens symboliques `/dev/<vg>/<lv>` et les fichiers de périphériques peuvent tarder à être créés par udev. Sans `vgmknodes`, le test `Path::new("/dev/vg1/storage").exists()` retournait `false` immédiatement.
-      4. Dans la configuration déclarative NixOS (`steveos-nas`), les modules noyau RAID (`dm-mod`, `dm-raid`, `raid0`, `raid1`, `raid456`, `raid10`) n'étaient pas déclarés dans `boot.kernelModules`, empêchant la reconnaissance native des grappes au démarrage système.
+      4. Dans la configuration déclarative NixOS (`noos-nas`), les modules noyau RAID (`dm-mod`, `dm-raid`, `raid0`, `raid1`, `raid456`, `raid10`) n'étaient pas déclarés dans `boot.kernelModules`, empêchant la reconnaissance native des grappes au démarrage système.
     - *Règles & Patterns éprouvés* :
       1. **Modules noyau déclaratifs & dynamiques** : Toujours inscrire les modules RAID dans `boot.kernelModules` dans `modules/storage/default.nix`, et charger proactivement `dm-mod`, `dm-raid`, `raid0`, `raid1`, `raid456`, `raid10` via `modprobe` dans le backend Rust avant toute activation LVM.
       2. **Parsing & Résolution unifiée VG/LV** : Qu'on reçoive `/dev/<vg>/<lv>`, `<vg>/<lv>`, `/dev/mapper/<vg>-<lv>`, ou `/dev/<vg>`, décomposer en `(vg_candidate, lv_candidate)`. Si le VG existe (`vgs <vg>`), activer avec `vgchange -ay -K --activationmode degraded <vg>`.
@@ -296,13 +296,13 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
     - *Piège Nixpkgs & Erreurs passées* :
       1. Tenter d'utiliser `services.samba.extraConfig` dans un module NixOS moderne. Dans Nixpkgs 24.11+ et instable (26.05), l'option `extraConfig` a été dépréciée puis définitivement supprimée. Son utilisation lève une erreur fatale d'évaluation (`The option services.samba.extraConfig does not exist`).
       2. Redémarrer brutalement Samba (`systemctl restart samba-smbd`) lors de chaque création ou modification de partage. Cela coupait les transferts de fichiers en cours et déconnectait les sessions actives des clients Windows, macOS ou Linux.
-    - *Règles & Architecture pérenne STEvE_OS* :
+    - *Règles & Architecture pérenne Noos* :
       1. **Inclusion Déclarative Propre** : Déclarer dans le module NixOS `modules/services/samba.nix` :
          ```nix
-         services.samba.settings.global."include" = "/var/lib/steveos/samba_shares.conf";
+         services.samba.settings.global."include" = "/var/lib/Noos/samba_shares.conf";
          ```
          et assurer la présence persistante des fichiers via `systemd.tmpfiles.rules`.
-      2. **Génération Dynamique & Persistance** : Le backend Rust (`src/samba.rs`) gère les partages déclaratifs au format JSON (`/var/lib/steveos/samba_shares.json`) et compile instantanément la configuration Samba au format smb.conf (`/var/lib/steveos/samba_shares.conf`).
+      2. **Génération Dynamique & Persistance** : Le backend Rust (`src/samba.rs`) gère les partages déclaratifs au format JSON (`/var/lib/Noos/samba_shares.json`) et compile instantanément la configuration Samba au format smb.conf (`/var/lib/Noos/samba_shares.conf`).
       3. **Rechargement à Chaud sans Déconnexion (Zero Downtime)** : Toujours recharger Samba via `systemctl reload-or-restart samba-smbd` et `smbcontrol smbd reload-config` pour appliquer les nouveaux partages et permissions sans interrompre les sessions TCP des clients connectés.
       4. **Extensions VFS Clés** :
          - Apple macOS Finder & Time Machine : `vfs objects = fruit streams_xattr`, `fruit:time machine = yes`.
@@ -315,7 +315,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
     - *Pièges & Bonnes pratiques sFTP / SSH* :
       1. **Sous-système internal-sftp vs sftp-server binaire** : Toujours utiliser `internal-sftp` pour OpenSSH. Contrairement à `sftp-server` (qui requiert la présence des bibliothèques dynamiques `/lib`, `/bin/sh` et des fichiers de périphériques dans la prison chroot), `internal-sftp` s'exécute directement dans le contexte du processus sshd sans nécessiter aucune arborescence FHS dans le dossier chrooté.
       2. **Filtrage des Comptes Autorisés SSH** : Ne jamais exposer tous les utilisateurs du système au protocole sFTP. Les comptes créés avec le shell `/run/current-system/sw/bin/nologin` (utilisateurs de partages Samba seuls) doivent être formellement exclus de la liste de sélection et de l'accès SSH.
-      3. **Inclusion Déclarative OpenSSH** : Utiliser `services.openssh.extraConfig = "Include /var/lib/steveos/sftp_shares.conf\\n";` pour injecter dynamiquement les blocs `Match User` et `ChrootDirectory` sans modifier impurement la configuration globale de NixOS.
+      3. **Inclusion Déclarative OpenSSH** : Utiliser `services.openssh.extraConfig = "Include /var/lib/Noos/sftp_shares.conf\\n";` pour injecter dynamiquement les blocs `Match User` et `ChrootDirectory` sans modifier impurement la configuration globale de NixOS.
       4. **Mode Lecture Seule sFTP** : Dans OpenSSH, l'interdiction d'écriture et d'upload sFTP s'applique de manière native via le drapeau `-R` : `ForceCommand internal-sftp -R -u 002`.
       5. **Rechargement à Chaud sans Déconnexion (SIGHUP)** : Toujours recharger le démon OpenSSH via `systemctl reload-or-restart sshd` (signal HUP). Les sessions de transfert sFTP en cours ne sont pas interrompues lors de l'ajout ou de la modification d'un partage.
 
@@ -323,7 +323,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
 
 28. **Montage Réseau Distant (sshfs / CIFS), Découverte LAN et Points de Montage Épinglés :**
     - *Pièges & Bonnes pratiques explorateur de fichiers* :
-      1. **FUSE et user_allow_other** : Pour que les montages FUSE (sshfs) soient accessibles par les utilisateurs non-root et le service web STEvE_OS, toujours activer déclarativement `programs.fuse.userAllowOther = true;` dans NixOS et passer l option `-o allow_other,idmap=user`.
+      1. **FUSE et user_allow_other** : Pour que les montages FUSE (sshfs) soient accessibles par les utilisateurs non-root et le service web Noos, toujours activer déclarativement `programs.fuse.userAllowOther = true;` dans NixOS et passer l option `-o allow_other,idmap=user`.
       2. **Sécurité des Mots de Passe en CLI** : Ne jamais passer de mots de passe en clair dans les arguments de ligne de commande sshfs (visibles dans `/proc` via `ps`). Toujours privilégier `password_stdin` via flux stdin sécurisé ou les clés SSH privées.
       3. **Découverte Passive et Non-Bloquante** : La détection des partages LAN doit combiner la table ARP du noyau (`/proc/net/arp`), mDNS/Avahi et des sondes TCP asynchrones sur ports 445 (SMB) et 22 (sFTP) avec des timeouts très courts (<= 250ms) pour ne jamais bloquer l interface.
       4. **VFS Transparente pour l Explorateur** : En montant les partages sous `/mnt/remote/<proto>/<id>`, l explorateur de fichiers réutilise 100% de ses fonctionnalités natives (streaming, renommage, compression, upload/download, miniatures) sans avoir besoin d écrire un client sFTP/SMB virtuel.
@@ -363,7 +363,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
       4. **Nettoyage Samba complet** :
          - Exécuter à la fois `smbpasswd -x <username>` et `pdbedit -x -u <username>`.
       5. **Immunité du compte administrateur principal** :
-         - Protéger le compte principal déclaré dans `vars.nix` (`STEVEOS_USER`) contre toute tentative de suppression avec le même statut immuable que `root` (`🔒 Immuable` dans l'interface et blocage 400 dans l'API).
+         - Protéger le compte principal déclaré dans `vars.nix` (`Noos_USER`) contre toute tentative de suppression avec le même statut immuable que `root` (`🔒 Immuable` dans l'interface et blocage 400 dans l'API).
       6. **Gestion d'état UI au clic** :
          - Désactiver le bouton de confirmation, afficher `⏳ Suppression en cours...`, encoder l'URL (`encodeURIComponent`), et parser la réponse avec gestion de repli en cas de code HTTP d'erreur.
 
@@ -376,7 +376,7 @@ Ce guide regroupe les apprentissages essentiels, l'architecture des dépôts, le
 31. **Scoping Strict des Verrous Asynchrones Tokio (`RwLock`) dans les Middlewares Axum & Prévention des Interblocages Post-Reboot :**
     - *Erreurs passées* :
       1. Maintenir un verrou d'écriture (`RwLockWriteGuard`) ou de lecture (`RwLockReadGuard`) actif pendant l'évaluation de `next.run(req).await` dans un middleware Axum (`auth_middleware`).
-      2. Lors d'un redémarrage du système, le cache de sessions en mémoire vive est vide mais les sessions persistent sur disque (`/var/lib/steveos/sessions.json`). Lorsque le navigateur se reconnecte avec des dizaines de requêtes simultanées, la première requête recharge la session depuis le disque et prend un verrou d'écriture `sessions_lock.write().await`. En exécutant `return next.run(req).await;` au sein du scope de ce verrou, le verrou exclusif reste verrouillé pendant toute la durée du traitement de la requête HTTP (qui peut durer 1 à 2 secondes pour les sondes matérielles).
+      2. Lors d'un redémarrage du système, le cache de sessions en mémoire vive est vide mais les sessions persistent sur disque (`/var/lib/Noos/sessions.json`). Lorsque le navigateur se reconnecte avec des dizaines de requêtes simultanées, la première requête recharge la session depuis le disque et prend un verrou d'écriture `sessions_lock.write().await`. En exécutant `return next.run(req).await;` au sein du scope de ce verrou, le verrou exclusif reste verrouillé pendant toute la durée du traitement de la requête HTTP (qui peut durer 1 à 2 secondes pour les sondes matérielles).
       3. Toutes les requêtes concurrentes s'empilent en attente de lecture (`sessions_lock.read().await`).
       4. Si le handler de la première requête (ou une tâche fille) requiert les détails de session via `get_session_from_headers`, il sollicite un verrou de lecture sur la même tâche. Comme le verrou Tokio `RwLock` n'est pas réentrant, cela engendre un interblocage immédiat (deadlock) et permanent, gelant la totalité des 48 threads Tokio de l'application dans `futex(FUTEX_WAIT_PRIVATE, ...)`.
     - *Règles & Patterns éprouvés* :
@@ -513,26 +513,26 @@ pub fn interpolate_pwm(temp: f32, curve: &[CurvePoint]) -> u8 {
 
 ### Routage par Hash d'URL & Persistance Multi-Vues (Dashboard) :
 - Ne jamais reposer uniquement sur `sessionStorage` pour l'état d'onglets : `sessionStorage` est volatile et se réinitialise lors des saisies d'URL dans la barre d'adresse, l'ouverture de nouvelles fenêtres ou les restrictions d'isolation de contexte.
-- Utiliser un couplage dynamique entre `window.location.hash` (`#storage`, `#files`, `#containers`, `#network/samba`, etc.) et `localStorage.setItem("steveos_active_tab", tabId)`.
+- Utiliser un couplage dynamique entre `window.location.hash` (`#storage`, `#files`, `#containers`, `#network/samba`, etc.) et `localStorage.setItem("Noos_active_tab", tabId)`.
 - Écouter l'événement `window.addEventListener("hashchange", ...)` pour garantir la cohérence des boutons Précédent / Suivant du navigateur.
 - **Anti-flicker de la vue d'accueil** : Détecter et appliquer la vue cible dès le `DOMContentLoaded` (et via un attribut de pré-rendu `data-initial-tab` dans l'en-tête HTML) afin d'éviter tout clignotement ou affichage bref de la vue d'accueil (`tab-overview`) pendant l'attente de la vérification de session asynchrone (`/api/auth/me`).
-- Conserver également le chemin actif de l'explorateur de fichiers (`steveos_files_path`) pour maintenir l'utilisateur dans son dossier courant après rafraîchissement.
+- Conserver également le chemin actif de l'explorateur de fichiers (`Noos_files_path`) pour maintenir l'utilisateur dans son dossier courant après rafraîchissement.
 
 ---
 
 ### Transition visuelle & Rechargement fluide post-mise à jour (Dashboard) :
 - Lors de la finalisation d'une mise à jour système (`stage === "completed"` ou 100%), déclencher un overlay plein écran avec floutage d'arrière-plan (`backdrop-filter: blur(20px)` et classe `body.app-updating-reload #app-shell` avec `filter: blur(14px) brightness(0.7)`).
 - Présenter une carte centrée Catppuccin Mocha animée avec icône rayonnante ✨, halo radial et micro-jauge de progression de synchronisation (2.2s).
-- **Persistance du contexte** : Mémoriser l'onglet actif dans `sessionStorage.setItem("steveos_active_tab", activeTab)` avant rechargement pour replacer automatiquement l'utilisateur sur son écran d'origine (qu'il soit resté sur l'onglet Mises à jour ou sur un autre onglet).
+- **Persistance du contexte** : Mémoriser l'onglet actif dans `sessionStorage.setItem("Noos_active_tab", activeTab)` avant rechargement pour replacer automatiquement l'utilisateur sur son écran d'origine (qu'il soit resté sur l'onglet Mises à jour ou sur un autre onglet).
 - Recharger la page via `window.location.replace()` avec un paramètre de timestamp pour purger le cache et appliquer immédiatement les nouveaux assets Web (HTML/JS/CSS) et le nouveau binaire.
 
 ---
 
-### Architecture App Store STEvE_OS (`steveos_nas_store` & Docker Compose v2) :
+### Architecture App Store Noos (`noos_nas_store` & Docker Compose v2) :
 - **Pourquoi Docker Compose asynchrone plutôt que la recompilation déclarative NixOS pour 600+ applications** :
   - Déployer des applications tierces via `virtualisation.oci-containers` forcerait un `nixos-rebuild switch` (plusieurs minutes d'évaluation, compilation et création de générations système) à chaque clic d'installation ou modification de variable.
   - L'orchestrateur Docker Compose v2 asynchrone permet un déploiement instantané (< 2 secondes) sous `/home/<user>/docker/<app_id>/compose.yaml` avec persistance unifiée dans `./data/...`.
-- **Pipeline d'ingestion & Audit qualité rigoureux (`steveos_nas_store`)** :
+- **Pipeline d'ingestion & Audit qualité rigoureux (`noos_nas_store`)** :
   - Ingestion automatisée depuis les collections amont (Portainer types 1 et 3) avec résolution des stacks Git distantes.
   - Récriture impérative des chemins hôtes arbitraires (`/portainer/...`, `/srv/docker/...`) vers des chemins relatifs fiables et propres `./data/...`.
   - Élimination des applications obsolètes ou abandonnées :
@@ -574,8 +574,8 @@ pub fn interpolate_pwm(temp: f32, curve: &[CurvePoint]) -> u8 {
 - **Suivi permanent du dernier noyau stable LTS NixOS (`pkgs.linuxPackages`)** :
   - Dans l'écosystème NixOS, `pkgs.linuxPackages` représente le noyau stable par défaut sélectionné et validé par les mainteneurs NixOS (actuellement la branche Linux 6.18.x) pour laquelle l'ensemble de la distribution (OpenZFS 2.4.x, pilotes Nvidia, virtualisation KVM/VFIO, Docker) est officiellement compilée et garantie dans le cache binaire.
   - Le noyau amont de pointe (`pkgs.linuxPackages_latest`) est quant à lui sur les versions 7.x expérimentales, non recommandées pour un serveur de stockage.
-- **Architecture adoptée dans STEvE_OS** :
-  - Déclaration de l'option `steveos.boot.kernel` dans `modules/options.nix` (valeur par défaut : `"lts"`).
+- **Architecture adoptée dans Noos** :
+  - Déclaration de l'option `Noos.boot.kernel` dans `modules/options.nix` (valeur par défaut : `"lts"`).
   - Module dédié `modules/core/kernel.nix` assignant `boot.kernelPackages = pkgs.linuxPackages;` par défaut via `mkDefault` lorsque `kernel = "lts"`.
   - Cela garantit que le NAS bénéficie automatiquement du **dernier noyau stable LTS en permanence** au fil des mises à jour Nixpkgs sans intervention manuelle.
   - Possibilité d'épinglage fixe sur des versions antérieures (`"6_12"`, `"6_6"`) ou vers le noyau amont (`"latest"`).
@@ -604,7 +604,7 @@ pub fn interpolate_pwm(temp: f32, curve: &[CurvePoint]) -> u8 {
 - **Architecture de double effet (Runtime immédiat & Déclaratif NixOS)** :
   - Pour concilier accès immédiat sans redémarrage et persistance durable après reboot, le Dashboard applique :
     1. Montage direct via `mount -o <runtime_flags> <device> <target>` avec attribution automatique des droits `chown -R <user>:storage <target>` et `chmod 2775 <target>` (setgid).
-    2. Écriture atomique dans `mounts.json` synchronisée sur `/var/lib/steveos/mounts.json`, le répertoire de config (`$STEVEOS_CONFIG_DIR/mounts.json`) et le clone de développement.
+    2. Écriture atomique dans `mounts.json` synchronisée sur `/var/lib/Noos/mounts.json`, le répertoire de config (`$Noos_CONFIG_DIR/mounts.json`) et le clone de développement.
     3. Lecture déclarative native par le module NixOS `modules/storage/mounts.nix` (`builtins.fromJSON (builtins.readFile ../../mounts.json)`) qui génère dynamiquement `fileSystems."<mountPoint>"` et les règles `systemd.tmpfiles.rules`.
 - **Piège critique des Flags de montage (`nofail` vs Kernel runtime)** :
   - *Piège* : Passer aveuglément l'option `nofail` dans la commande runtime `mount -o defaults,noatime,nofail /dev/... /mnt/...` peut provoquer une erreur `mount: wrong fs type, bad option, bad superblock` selon le système de fichiers ou la version du noyau, car `nofail` est un drapeau géré exclusivement par `/etc/fstab` et `systemd`.
@@ -702,17 +702,17 @@ fn resolve_and_activate_block_device(clean_dev: &str, req: &MountRequest) -> Res
 
 ---
 
-### Standardisation des Templates Docker Compose (`steveos_nas_store`) :
+### Standardisation des Templates Docker Compose (`noos_nas_store`) :
 
 - **Format officiel obligatoire des fichiers `compose.yaml`** :
-  Tout template Docker Compose publié sur [`Chomiam/steveos_nas_store`](https://github.com/Chomiam/steveos_nas_store) doit obligatoirement intégrer le cartouche de métadonnées officiel en en-tête et le bloc de correspondance NixOS en pied de page :
+  Tout template Docker Compose publié sur [`Chomiam/noos_nas_store`](https://github.com/Chomiam/noos_nas_store) doit obligatoirement intégrer le cartouche de métadonnées officiel en en-tête et le bloc de correspondance NixOS en pied de page :
   ```yaml
   # =========================================================================
-  # 🐳 STEvE_OS NAS Edition — Configuration Docker Compose
+  # 🐳 Noos NAS Edition — Configuration Docker Compose
   # Application  : <Nom de l'application> (<app_id>)
   # Port hôte    : <port_principal_web>
   # Données hôte : /home/{user}/docker/<app_id>
-  # Mode         : Production STEvE_OS Store
+  # Mode         : Production Noos Store
   # =========================================================================
 
   version: "3.8"
@@ -746,7 +746,7 @@ fn resolve_and_activate_block_device(clean_dev: &str, req: &MountRequest) -> Res
   - Ces opérations ne doivent JAMAIS dépendre d'une connexion HTTP synchrone (timeout navigateur, coupure réseau, fermeture de session).
   - En cas de coupure électrique, redémarrage du NAS ou mise à jour système NixOS en plein milieu d'une opération, l'action doit **reprendre automatiquement là où elle s'est arrêtée** sans abandonner le stockage dans un état inconsistant.
 - **Architecture de Persistance & Machine à États Finis (`StorageJob`)** :
-  - **Fichier d'état sur disque** : `/var/lib/steveos/storage_jobs.json` (persistant à travers les boots et les mises à jour NixOS).
+  - **Fichier d'état sur disque** : `/var/lib/Noos/storage_jobs.json` (persistant à travers les boots et les mises à jour NixOS).
   - **Modèle `StorageJob`** : stocke `id`, `job_type` (`destroy_raid` ou `create_raid`), `status` (`running`, `resumed`, `completed`, `failed`), `current_step`, `total_steps`, `progress_percent`, `step_name`, `step_detail`, disques cibles et paramètres.
   - **Machine à états pour la Dissolution (`destroy_raid`)** :
     1. *Étape 1 (15%)* : Vérification sécurité (`is_system_device`) & Démontage forcé propre (`umount -f`).
@@ -786,7 +786,7 @@ fn resolve_and_activate_block_device(clean_dev: &str, req: &MountRequest) -> Res
   - **Emplacements Fantômes (Ghost Slots)** : Si le nombre de disques cochés est inférieur au minimum requis par l'algorithme (ex: 2 disques pour RAID 5 qui en demande 3), afficher des baies fantômes en pointillés animés (`+ Disque Requis`) pour guider visuellement l'utilisateur.
 - **Sélecteur Comparatif de Systèmes de Fichiers (Btrfs, XFS, Ext4)** :
   - Présentation sous forme de cartes interactives (`.fs-type-card`) détaillant les points forts et contraintes de chaque moteur :
-    - *Btrfs* : Recommandé STEvE_OS (Snapshots instantanés CoW, auto-guérison bitrot, compression zstd) / Plus exigeant en RAM.
+    - *Btrfs* : Recommandé Noos (Snapshots instantanés CoW, auto-guérison bitrot, compression zstd) / Plus exigeant en RAM.
     - *XFS* : Recommandé pour gros débits et fichiers volumineux (multimédia 4K, ISO, scalabilité multithreadée) / Pas de shrink possible.
     - *Ext4* : Standard historique Linux (légèreté absolue, fiabilité universelle, fsck rapide) / Pas de CoW ni de snapshots natifs.
 

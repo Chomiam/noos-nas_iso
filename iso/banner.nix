@@ -107,7 +107,6 @@ in
 
   systemd.services.noos-banner = {
     description = "Noos NAS Edition - Bannière Console Dédiée TTY1";
-    aliases = [ "steveos-banner.service" ];
     after = [ "network.target" "noos-web-installer.service" ];
     wantedBy = [ "multi-user.target" ];
     conflicts = [ "getty@tty1.service" "autovt@tty1.service" ];
