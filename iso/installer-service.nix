@@ -3,7 +3,7 @@
 let
   noos-web-installer = pkgs.rustPlatform.buildRustPackage {
     pname = "noos-web-installer";
-    version = "0.2.4";
+    version = "0.2.5";
     src = ../web-installer;
     cargoLock = {
       lockFile = ../web-installer/Cargo.lock;
@@ -34,6 +34,9 @@ in
     pkgs.lvm2
     pkgs.mdadm
     pkgs.psmisc
+    pkgs.pciutils
+    pkgs.usbutils
+    pkgs.kmod
     pkgs.openssl
     pkgs.nixos-install-tools
     pkgs.nettools
@@ -55,6 +58,9 @@ in
       lvm2
       mdadm
       psmisc
+      pciutils
+      usbutils
+      kmod
       dosfstools
       btrfs-progs
       e2fsprogs

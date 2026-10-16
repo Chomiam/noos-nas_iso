@@ -360,6 +360,60 @@ pub fn compute_partition_layout(
     })
 }
 
+/// Injecte proprement un attribut Nix (ex: `boot.loader.efi.canTouchEfiVariables = lib.mkForce false;`)
+/// juste avant l'accolade fermante finale d'un module Nix (`hardware-configuration.nix`) généré par l'hôte,
+/// sans écraser les définitions de points de montage (`fileSystems`) ni les modules noyau (`initrd`).
+pub fn inject_nix_module_attr(nix_module: &str, attr_line: &str) -> String {
+    let trimmed_attr = attr_line.trim();
+    if nix_module.contains(trimmed_attr) {
+        return nix_module.to_string();
+    }
+    if let Some(last_brace) = nix_module.rfind('}') {
+        let mut out = String::with_capacity(nix_module.len() + trimmed_attr.len() + 8);
+        out.push_str(&nix_module[..last_brace]);
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str("  ");
+        out.push_str(trimmed_attr);
+        out.push('\n');
+        out.push_str(&nix_module[last_brace..]);
+        out
+    } else {
+        format!("{}\n{}\n", nix_module, trimmed_attr)
+    }
+}
+
+/// Extrait un résumé lisible des paramètres matériels détectés par `nixos-generate-config` sur l'hôte
+pub fn summarize_generated_hardware_config(hw_nix: &str) -> String {
+    let mut initrd_mods = String::from("standard");
+    let mut cpu_microcode = String::from("générique");
+    let mut fs_count = 0usize;
+
+    for line in hw_nix.lines() {
+        let t = line.trim();
+        if t.starts_with("boot.initrd.availableKernelModules") {
+            if let (Some(l), Some(r)) = (t.find('['), t.rfind(']')) {
+                let mods = t[l + 1..r].trim();
+                if !mods.is_empty() {
+                    initrd_mods = mods.replace('"', "");
+                }
+            }
+        } else if t.contains("hardware.cpu.intel.updateMicrocode") {
+            cpu_microcode = "Intel".to_string();
+        } else if t.contains("hardware.cpu.amd.updateMicrocode") {
+            cpu_microcode = "AMD".to_string();
+        } else if t.starts_with("fileSystems.\"") {
+            fs_count += 1;
+        }
+    }
+
+    format!(
+        "CPU={} | Modules initrd=[{}] | Points de montage déclarés={}",
+        cpu_microcode, initrd_mods, fs_count
+    )
+}
+
 /// Traduit et verbalise clairement en français une erreur d'installation avec sa cause et sa solution
 pub fn verbalize_error(
     step_label: &str,
@@ -585,7 +639,7 @@ pub async fn run_installation(
     // Laisser 250ms au navigateur pour ouvrir le flux EventSource (/api/install/stream)
     tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
 
-    log(&manager, "🚀 Démarrage de l'installation de Noos NAS Edition (v0.2.4)...").await;
+    log(&manager, "🚀 Démarrage de l'installation de Noos NAS Edition (v0.2.5)...").await;
     log(
         &manager,
         &format!(
@@ -1984,62 +2038,23 @@ pub async fn run_installation(
     .await;
 
     // =========================================================================
-    // ÉTAPE 4/6 : GÉNÉRATION ET VALIDATION DE LA CONFIGURATION NIXOS
+    // ÉTAPE 4/6 : GÉNÉRATION MATÉRIELLE HÔTE ET CONFIGURATION NIXOS
     // =========================================================================
     log_stage_banner(
         &manager,
         4,
         6,
-        "Génération et validation de la configuration NixOS",
-        "Détecter le matériel (UUIDs), déployer le Flake Noos NAS, chiffrer le mot de passe et indexer tous les fichiers dans Git.",
+        "Génération matérielle hôte et configuration NixOS",
+        "Déployer le dépôt Noos NAS, générer dynamiquement hardware-configuration.nix par l'hôte (CPU, modules initrd, UUIDs) et configurer vars.nix.",
         15,
     )
     .await;
 
-    let mut gen_cmd = Command::new("nixos-generate-config");
-    gen_cmd.args(["--root", "/mnt"]);
-    if let Err(diag) = exec_cmd_named(
-        manager.clone(),
-        "l'Étape 4/6 (Détection matérielle nixos-generate-config)",
-        "nixos-generate-config --root /mnt",
-        gen_cmd,
-    )
-    .await
-    {
-        fail_install_with_diagnosis(manager, diag).await;
-        return;
-    }
-
     let target_cfg_dir = "/mnt/etc/nixos";
-    let hw_config_src = "/mnt/etc/nixos/hardware-configuration.nix";
-    let hw_config_backup = "/tmp/hw-config-backup.nix";
+    let _ = Command::new("mkdir").args(["-p", target_cfg_dir]).status().await;
 
-    let hw_content = match std::fs::read_to_string(hw_config_src) {
-        Ok(c) if c.contains("fileSystems.\"/\"") => c,
-        _ => {
-            fail_install_with_diagnosis(
-                manager,
-                ErrorDiagnosis {
-                    summary: "Échec à l'Étape 4/6 : Fichier hardware-configuration.nix invalide ou absent".to_string(),
-                    explanation: "nixos-generate-config n'a pas produit de configuration de points de montage valide dans /mnt/etc/nixos/hardware-configuration.nix.".to_string(),
-                    suggestion: "Relancez l'installation pour régénérer la détection matérielle.".to_string(),
-                    technical_detail: "hardware-configuration.nix absent ou sans fileSystems.\"/\"".to_string(),
-                },
-            )
-            .await;
-            return;
-        }
-    };
-    let _ = std::fs::write(hw_config_backup, &hw_content);
-    log_safety_check(&manager, "Configuration matérielle (UUIDs des partitions) générée et sauvegardée.").await;
-
-    set_step(
-        &manager,
-        "Étape 4/6 : Déploiement du dépôt Noos NAS Edition dans /mnt/etc/nixos",
-        17,
-    )
-    .await;
-
+    // 4.1 Déploiement initial du dépôt Noos NAS dans /mnt/etc/nixos
+    // (hosts/nas/hardware-configuration.nix reste le fichier générique de repli suivi par Git et n'est JAMAIS écrasé)
     if let Some(source_dir) = embedded_source {
         log(
             &manager,
@@ -2144,14 +2159,99 @@ pub async fn run_installation(
         return;
     }
 
-    // Injection de hardware-configuration.nix à la racine ET dans hosts/nas/ (pour écraser le stub par défaut du dépôt)
+    // 4.2 Génération dynamique de hardware-configuration.nix par la machine hôte
+    set_step(
+        &manager,
+        "Étape 4/6 : Détection matérielle de l'hôte (nixos-generate-config)",
+        17,
+    )
+    .await;
+    log(
+        &manager,
+        "Inspection du matériel de la machine hôte (CPU, bus PCI/NVMe/SATA/USB, UUIDs des partitions montées sous /mnt)...",
+    )
+    .await;
+
+    // --show-hardware-config génère uniquement hardware-configuration.nix sans créer de configuration.nix parasite à la racine
+    let show_hw_out = Command::new("nixos-generate-config")
+        .args(["--root", "/mnt", "--show-hardware-config"])
+        .output()
+        .await;
+
+    let hw_config_dest = format!("{}/hardware-configuration.nix", target_cfg_dir);
+    let mut hw_content = String::new();
+
+    if let Ok(out) = show_hw_out {
+        if out.status.success() {
+            let stdout_str = String::from_utf8_lossy(&out.stdout).to_string();
+            if stdout_str.contains("fileSystems.\"/\"") {
+                hw_content = stdout_str;
+            }
+        }
+    }
+
+    // Repli sur `nixos-generate-config --root /mnt` classique si `--show-hardware-config` n'a pas suffi
+    if hw_content.is_empty() {
+        let mut gen_cmd = Command::new("nixos-generate-config");
+        gen_cmd.args(["--root", "/mnt"]);
+        if let Err(diag) = exec_cmd_named(
+            manager.clone(),
+            "l'Étape 4/6 (Détection matérielle nixos-generate-config)",
+            "nixos-generate-config --root /mnt",
+            gen_cmd,
+        )
+        .await
+        {
+            fail_install_with_diagnosis(manager, diag).await;
+            return;
+        }
+        // Supprimer le fichier /mnt/etc/nixos/configuration.nix monolithique par défaut généré par nixos-generate-config
+        // car le Flake utilise hosts/nas/configuration.nix
+        let _ = std::fs::remove_file(format!("{}/configuration.nix", target_cfg_dir));
+        hw_content = std::fs::read_to_string(&hw_config_dest).unwrap_or_default();
+    }
+
+    if !hw_content.contains("fileSystems.\"/\"") || !hw_content.contains("fileSystems.\"/boot\"") {
+        fail_install_with_diagnosis(
+            manager,
+            ErrorDiagnosis {
+                summary: "Échec à l'Étape 4/6 : Fichier hardware-configuration.nix généré par l'hôte invalide ou incomplet".to_string(),
+                explanation: "nixos-generate-config n'a pas détecté les points de montage / et /boot dans /mnt/etc/nixos/hardware-configuration.nix.".to_string(),
+                suggestion: "Relancez l'installation pour régénérer la détection matérielle sur l'hôte.".to_string(),
+                technical_detail: "hardware-configuration.nix sans fileSystems.\"/\" ou fileSystems.\"/boot\"".to_string(),
+            },
+        )
+        .await;
+        return;
+    }
+
+    // Si la machine n'a pas démarré en mode UEFI (/sys/firmware/efi absent), injecter canTouchEfiVariables = false
+    // directement dans le hardware-configuration.nix généré par l'hôte (sans écraser ses modules ni ses fileSystems)
+    if !is_efi_booted {
+        hw_content = inject_nix_module_attr(
+            &hw_content,
+            "boot.loader.efi.canTouchEfiVariables = lib.mkForce false;",
+        );
+        log_safety_check(
+            &manager,
+            "Option 'boot.loader.efi.canTouchEfiVariables = lib.mkForce false' injectée dans hardware-configuration.nix de l'hôte.",
+        )
+        .await;
+    }
+
+    // Écriture de la configuration matérielle générée par l'hôte UNIQUEMENT dans les emplacements propres à la machine :
+    // - /mnt/etc/nixos/hardware-configuration.nix (importé en priorité par hosts/nas/configuration.nix)
+    // - /mnt/etc/nixos/hosts/nas/hardware.local.nix (miroir local ignoré par Git en amont)
+    // - /mnt/etc/nixos/.hardware-configuration.nix.backup (sauvegarde de résilience du Dashboard et de users.nix)
+    // IMPORTANT : On ne touche JAMAIS à /mnt/etc/nixos/hosts/nas/hardware-configuration.nix (générique suivi par Git).
     let _ = Command::new("mkdir")
         .args(["-p", &format!("{}/hosts/nas", target_cfg_dir)])
         .status()
         .await;
     for dest in [
-        format!("{}/hardware-configuration.nix", target_cfg_dir),
-        format!("{}/hosts/nas/hardware-configuration.nix", target_cfg_dir),
+        hw_config_dest.clone(),
+        format!("{}/hosts/nas/hardware.local.nix", target_cfg_dir),
+        format!("{}/.hardware-configuration.nix.backup", target_cfg_dir),
     ] {
         if let Err(e) = std::fs::write(&dest, &hw_content) {
             fail_install_with_diagnosis(
@@ -2167,22 +2267,16 @@ pub async fn run_installation(
             return;
         }
     }
-    let _ = std::fs::remove_file(hw_config_backup);
 
-    // Si la machine n'a pas démarré en mode UEFI (/sys/firmware/efi absent), désactiver canTouchEfiVariables dans hardware.local.nix
-    if !is_efi_booted {
-        let hw_local = r#"{ lib, ... }:
-{
-  boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
-}
-"#;
-        let _ = std::fs::write(format!("{}/hosts/nas/hardware.local.nix", target_cfg_dir), hw_local);
-        log_safety_check(
-            &manager,
-            "Option 'boot.loader.efi.canTouchEfiVariables = false' activée dans hosts/nas/hardware.local.nix.",
-        )
-        .await;
-    }
+    let hw_summary = summarize_generated_hardware_config(&hw_content);
+    log_safety_check(
+        &manager,
+        &format!(
+            "hardware-configuration.nix généré par l'hôte ({}) et isolé de hosts/nas/hardware-configuration.nix.",
+            hw_summary
+        ),
+    )
+    .await;
 
     // Création des liens symboliques de rétrocompatibilité
     let _ = Command::new("ln")
@@ -2350,8 +2444,9 @@ pub async fn run_installation(
     let _ = Command::new("mkdir").args(["-p", "/mnt/var/lib/noos"]).status().await;
     let _ = std::fs::write("/mnt/var/lib/noos/update_channel", "stable\n");
 
-    // CRITIQUE : Utiliser `git add -f -A` (--force) car le .gitignore de noos-nas ignore
-    // hardware-configuration.nix et *.local.nix ! Sans `-f`, Nix Flake ignore ces fichiers lors du build !
+    // Enregistrer les fichiers propres à l'hôte (hardware-configuration.nix, hosts/nas/hardware.local.nix, vars.nix, vars.local.nix)
+    // dans l'index Git local pour que Nix Flake (en mode git+file:// comme en mode path:) les inclue dans le store Nix,
+    // tout en gardant hosts/nas/hardware-configuration.nix intact par rapport au dépôt GitHub.
     if !std::path::Path::new(&format!("{}/.git", target_cfg_dir)).exists() {
         let _ = Command::new("git")
             .args(["-C", target_cfg_dir, "init"])
@@ -2360,11 +2455,20 @@ pub async fn run_installation(
     }
 
     let mut git_add = Command::new("git");
-    git_add.args(["-C", target_cfg_dir, "add", "-f", "-A"]);
+    git_add.args([
+        "-C",
+        target_cfg_dir,
+        "add",
+        "-f",
+        "hardware-configuration.nix",
+        "hosts/nas/hardware.local.nix",
+        "vars.nix",
+        "vars.local.nix",
+    ]);
     if let Err(diag) = exec_cmd_named(
         manager.clone(),
-        "l'Étape 4/6 (Indexation Git forcée pour Nix Flake)",
-        "git -C /mnt/etc/nixos add -f -A",
+        "l'Étape 4/6 (Enregistrement des fichiers hôte pour Nix Flake)",
+        "git -C /mnt/etc/nixos add -f hardware-configuration.nix hosts/nas/hardware.local.nix vars.nix vars.local.nix",
         git_add,
     )
     .await
@@ -2388,8 +2492,8 @@ pub async fn run_installation(
         fail_install_with_diagnosis(
             manager,
             ErrorDiagnosis {
-                summary: "Échec à l'Étape 4/6 : Fichiers de configuration non suivis par Git pour le Flake Nix".to_string(),
-                explanation: "Les fichiers hardware-configuration.nix ou vars.local.nix ne figurent pas dans l'index Git de /mnt/etc/nixos.".to_string(),
+                summary: "Échec à l'Étape 4/6 : Fichiers de configuration hôte non pris en compte par le Flake Nix".to_string(),
+                explanation: "Les fichiers hardware-configuration.nix ou vars.local.nix ne figurent pas dans l'index du Flake /mnt/etc/nixos.".to_string(),
                 suggestion: "Relancez l'installation.".to_string(),
                 technical_detail: format!("git ls-files: {}", ls_files_out.replace('\n', ", ")),
             },
@@ -2400,14 +2504,14 @@ pub async fn run_installation(
 
     log_safety_check(
         &manager,
-        "Index Git du Flake vérifié : hardware-configuration.nix, hosts/nas/hardware-configuration.nix, vars.nix et vars.local.nix sont bien suivis.",
+        "Configuration hôte vérifiée : /mnt/etc/nixos/hardware-configuration.nix (généré par la machine) et vars.local.nix sont prêts pour l'évaluation Flake.",
     )
     .await;
     log_stage_success(
         &manager,
         4,
         6,
-        "Configuration NixOS et Flake Noos NAS prêts pour le déploiement.",
+        "Configuration matérielle hôte et Flake Noos NAS prêts pour le déploiement.",
     )
     .await;
 
@@ -2447,17 +2551,29 @@ pub async fn run_installation(
         if is_efi_nvram_err {
             log(
                 &manager,
-                "⚠️ [AUTO-RÉPARATION] Le firmware UEFI a refusé l'écriture NVRAM (bootctl). Activation automatique de 'canTouchEfiVariables = false' et relance de la finalisation...",
+                "⚠️ [AUTO-RÉPARATION] Le firmware UEFI a refusé l'écriture NVRAM (bootctl). Injection de 'canTouchEfiVariables = lib.mkForce false' dans hardware-configuration.nix de l'hôte et relance...",
             )
             .await;
-            let hw_local = r#"{ lib, ... }:
-{
-  boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
-}
-"#;
-            let _ = std::fs::write(format!("{}/hosts/nas/hardware.local.nix", target_cfg_dir), hw_local);
+            let patched_hw = inject_nix_module_attr(
+                &hw_content,
+                "boot.loader.efi.canTouchEfiVariables = lib.mkForce false;",
+            );
+            for dest in [
+                hw_config_dest.clone(),
+                format!("{}/hosts/nas/hardware.local.nix", target_cfg_dir),
+                format!("{}/.hardware-configuration.nix.backup", target_cfg_dir),
+            ] {
+                let _ = std::fs::write(&dest, &patched_hw);
+            }
             let _ = Command::new("git")
-                .args(["-C", target_cfg_dir, "add", "-f", "-A"])
+                .args([
+                    "-C",
+                    target_cfg_dir,
+                    "add",
+                    "-f",
+                    "hardware-configuration.nix",
+                    "hosts/nas/hardware.local.nix",
+                ])
                 .status()
                 .await;
 
@@ -2690,5 +2806,53 @@ mod tests {
         );
         assert!(diag_dev.summary.contains("Périphérique de partition introuvable"));
     }
+
+    #[test]
+    fn test_inject_nix_module_attr_preserves_host_hardware_config() {
+        let sample_hw = r#"{ config, lib, pkgs, modulesPath, ... }:
+
+{
+  imports =
+    [ (modulesPath + "/installer/scan/not-detected.nix")
+    ];
+
+  boot.initrd.availableKernelModules = [ "xhci_pci" "ahci" "nvme" "usbhid" "sd_mod" ];
+  boot.kernelModules = [ "kvm-intel" ];
+
+  fileSystems."/" =
+    { device = "/dev/disk/by-uuid/1234-5678";
+      fsType = "btrfs";
+    };
+
+  fileSystems."/boot" =
+    { device = "/dev/disk/by-uuid/ABCD-EF01";
+      fsType = "vfat";
+    };
+
+  hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 }
+"#;
+        let patched = inject_nix_module_attr(
+            sample_hw,
+            "boot.loader.efi.canTouchEfiVariables = lib.mkForce false;",
+        );
+        assert!(patched.contains("fileSystems.\"/\""));
+        assert!(patched.contains("fileSystems.\"/boot\""));
+        assert!(patched.contains("boot.loader.efi.canTouchEfiVariables = lib.mkForce false;"));
+        assert!(patched.trim_end().ends_with('}'));
+
+        // Idempotence : un second appel ne duplique pas la ligne
+        let patched_twice = inject_nix_module_attr(
+            &patched,
+            "boot.loader.efi.canTouchEfiVariables = lib.mkForce false;",
+        );
+        assert_eq!(patched, patched_twice);
+
+        let summary = summarize_generated_hardware_config(sample_hw);
+        assert!(summary.contains("CPU=Intel"));
+        assert!(summary.contains("xhci_pci ahci nvme usbhid sd_mod"));
+        assert!(summary.contains("Points de montage déclarés=2"));
+    }
+}
+
 
