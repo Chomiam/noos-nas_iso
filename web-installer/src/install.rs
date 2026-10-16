@@ -1153,8 +1153,10 @@ pub async fn run_installation(
 
     let my_pid = std::process::id();
 
-    // 2.0 Terminer tout processus tiers ayant un fichier ouvert, cwd, root ou mmap dans /mnt ou sur /dev/<base_name>*
-    let _ = Command::new("fuser").args(["-k", "-9", "-m", "/mnt"]).status().await;
+    // 2.0 Terminer tout processus tiers ayant un fichier ouvert, cwd, root ou exe dans /mnt ou sur /dev/<base_name>*
+    // ATTENTION : Ne JAMAIS appeler `fuser -k -9 -m /mnt` lorsque `/mnt` n'est pas un point de montage
+    // actif, car `fuser -m` résout alors `/` (le système de fichiers racine du Live ISO) et tue
+    // tous les processus du système y compris `noos-web-installer` lui-même !
     if let Ok(proc_entries) = std::fs::read_dir("/proc") {
         for proc_entry in proc_entries.flatten() {
             if let Ok(pid) = proc_entry.file_name().to_string_lossy().parse::<u32>() {
@@ -1196,7 +1198,7 @@ pub async fn run_installation(
                         .unwrap_or_default();
                     let is_root_udevd = comm.contains("udevd")
                         && status_str.lines().any(|l| l.starts_with("PPid:\t1"));
-                    if !is_root_udevd && !comm.contains("noos") {
+                    if !is_root_udevd && !comm.contains("noos") && !comm.contains("systemd") && !comm.contains("sshd") {
                         let _ = Command::new("kill").args(["-9", &pid.to_string()]).status().await;
                     }
                 }
@@ -1468,7 +1470,7 @@ pub async fn run_installation(
                                 ),
                             )
                             .await;
-                            if !is_root_udevd && !comm.contains("noos") {
+                            if !is_root_udevd && !comm.contains("noos") && !comm.contains("systemd") && !comm.contains("sshd") {
                                 let _ = Command::new("kill").args(["-9", &pid.to_string()]).status().await;
                             }
                         }
