@@ -37,6 +37,7 @@ async fn main() {
         .route("/api/disks", get(get_disks))
         .route("/api/validate-user", post(validate_user_route))
         .route("/api/install", post(start_install))
+        .route("/api/reset", post(reset_install))
         .route("/api/status", get(get_status))
         .route("/api/logs", get(get_logs))
         .route("/api/install/stream", get(install_stream))
@@ -162,11 +163,20 @@ async fn start_install(
     if let Err(e) = validate_username(&req.username) {
         return (StatusCode::BAD_REQUEST, Json(GenericResponse { ok: false, message: e })).into_response();
     }
+    if !install::validate_hostname(&req.hostname) {
+        return (StatusCode::BAD_REQUEST, Json(GenericResponse { ok: false, message: "Nom de machine (hostname) invalide : utilisez uniquement des lettres, chiffres et tirets (sans espace ni souligné).".into() })).into_response();
+    }
     if req.password.len() < 4 {
         return (StatusCode::BAD_REQUEST, Json(GenericResponse { ok: false, message: "Le mot de passe doit comporter au moins 4 caractères.".into() })).into_response();
     }
-    if !req.disk_path.starts_with("/dev/") {
+    if req.filesystem != "btrfs" && req.filesystem != "ext4" {
+        return (StatusCode::BAD_REQUEST, Json(GenericResponse { ok: false, message: "Système de fichiers invalide (btrfs ou ext4 attendu).".into() })).into_response();
+    }
+    if !req.disk_path.starts_with("/dev/") || req.disk_path.contains("..") {
         return (StatusCode::BAD_REQUEST, Json(GenericResponse { ok: false, message: "Périphérique de disque invalide.".into() })).into_response();
+    }
+    if disks::is_disk_install_media(&req.disk_path) {
+        return (StatusCode::BAD_REQUEST, Json(GenericResponse { ok: false, message: "Opération refusée : ce disque héberge le système Live ISO en cours d'exécution.".into() })).into_response();
     }
 
     let is_running = {
@@ -184,6 +194,32 @@ async fn start_install(
     });
 
     (StatusCode::OK, Json(GenericResponse { ok: true, message: "Installation lancée avec succès.".into() })).into_response()
+}
+
+async fn reset_install(State(state): State<Arc<AppState>>) -> Response {
+    let mut m = state.manager.lock().await;
+    if m.status == "running" {
+        return (
+            StatusCode::CONFLICT,
+            Json(GenericResponse {
+                ok: false,
+                message: "Impossible de réinitialiser pendant qu'une installation est en cours.".into(),
+            }),
+        )
+            .into_response();
+    }
+    m.status = "idle".to_string();
+    m.progress = 0;
+    m.step = "En attente de configuration".to_string();
+    m.error = None;
+    (
+        StatusCode::OK,
+        Json(GenericResponse {
+            ok: true,
+            message: "État réinitialisé.".into(),
+        }),
+    )
+        .into_response()
 }
 
 async fn get_status(State(state): State<Arc<AppState>>) -> Json<InstallStatusResponse> {
@@ -332,3 +368,21 @@ async fn apply_update_route() -> Response {
         Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, Json(GenericResponse { ok: false, message: err })).into_response(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_username() {
+        assert!(validate_username("alex").is_ok());
+        assert!(validate_username("nas_user-1").is_ok());
+        assert!(validate_username("").is_err());
+        assert!(validate_username("a").is_err());
+        assert!(validate_username("Alex").is_err());
+        assert!(validate_username("1alex").is_err());
+        assert!(validate_username("root").is_err());
+        assert!(validate_username("admin").is_err());
+    }
+}
+

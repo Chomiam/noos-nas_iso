@@ -217,6 +217,36 @@
           <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%;"></div>
         </div>
 
+        <!-- Indicateur visuel des 6 étapes clés -->
+        <div class="stages-pipeline" id="stages-pipeline">
+          <div class="stage-pill" id="stage-pill-1" data-stage="1">1. Pré-vol & Sécurité</div>
+          <div class="stage-pill" id="stage-pill-2" data-stage="2">2. Partitionnement GPT</div>
+          <div class="stage-pill" id="stage-pill-3" data-stage="3">3. Formatage & Montage</div>
+          <div class="stage-pill" id="stage-pill-4" data-stage="4">4. Config & Flake Nix</div>
+          <div class="stage-pill" id="stage-pill-5" data-stage="5">5. Système NixOS</div>
+          <div class="stage-pill" id="stage-pill-6" data-stage="6">6. Finalisation</div>
+        </div>
+
+        <!-- Panneau de diagnostic explicite en cas d'erreur -->
+        <div class="error-diagnosis-box" id="error-diagnosis-box" style="display: none;">
+          <div class="error-diagnosis-header">
+            <span class="error-diagnosis-icon">💥</span>
+            <div>
+              <h3 class="error-diagnosis-title" id="error-diag-summary">Échec de l'installation</h3>
+              <p class="error-diagnosis-subtitle" id="error-diag-explanation"></p>
+            </div>
+          </div>
+          <div class="error-diagnosis-suggestion" id="error-diag-suggestion"></div>
+          <div class="error-diagnosis-actions">
+            <button type="button" class="btn-secondary-action" onclick="copyInstallLogs()">
+              📋 Copier tous les logs
+            </button>
+            <button type="button" class="btn-primary" onclick="resetAndReturnToForm()">
+              🔄 Modifier la configuration / Réessayer
+            </button>
+          </div>
+        </div>
+
         <!-- Terminal stylisé Catppuccin -->
         <div class="terminal-window">
           <div class="terminal-titlebar">
@@ -226,7 +256,12 @@
               <span class="dot dot-green"></span>
             </div>
             <div class="terminal-title">Noos NAS — Console d'Installation (Live Output)</div>
-            <div class="terminal-badge" id="terminal-status-badge">ACTIF</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button type="button" class="btn-copy-logs" id="btn-copy-logs" onclick="copyInstallLogs()" title="Copier l'intégralité des logs">
+                📋 Copier
+              </button>
+              <div class="terminal-badge" id="terminal-status-badge">ACTIF</div>
+            </div>
           </div>
           <div class="terminal-body" id="terminal-body">
             <div class="term-line term-system">--- Initialisation du flux de logs SSE ---</div>

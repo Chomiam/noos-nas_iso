@@ -160,3 +160,59 @@ pub fn list_available_disks() -> Vec<DiskInfo> {
 
     disks
 }
+
+/// Vérifie si un disque donné correspond au support d'installation Live ISO actif
+pub fn is_disk_install_media(disk_path: &str) -> bool {
+    let all = list_available_disks();
+    if let Some(d) = all.iter().find(|d| d.path == disk_path) {
+        if d.is_install_media {
+            return true;
+        }
+    }
+    let base_name = disk_path.trim_start_matches("/dev/");
+    if !base_name.is_empty() {
+        if let Ok(mounts) = std::fs::read_to_string("/proc/mounts") {
+            for line in mounts.lines() {
+                let cols: Vec<&str> = line.split_whitespace().collect();
+                if cols.len() >= 2 {
+                    let dev = cols[0];
+                    let mp = cols[1];
+                    if dev.starts_with(&format!("/dev/{}", base_name))
+                        && (mp == "/iso" || mp == "/run/iso" || mp == "/cdrom" || mp.starts_with("/nix/.ro-store"))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(512), "512 octets");
+        assert_eq!(format_size(250_059_350_016), "250.1 Go (232.9 GiB)");
+    }
+
+    #[test]
+    fn test_collect_child_mounts_detects_nested_live_iso() {
+        let tree = vec![LsblkChild {
+            mountpoints: Some(vec![None]),
+            children: Some(vec![LsblkChild {
+                mountpoints: Some(vec![Some("/iso".to_string())]),
+                children: None,
+            }]),
+        }];
+        let mut mounts = Vec::new();
+        let mut is_live = false;
+        collect_child_mounts(&tree, &mut mounts, &mut is_live);
+        assert!(is_live);
+        assert_eq!(mounts, vec!["/iso".to_string()]);
+    }
+}
+

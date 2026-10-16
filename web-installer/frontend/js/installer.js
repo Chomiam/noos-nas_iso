@@ -466,20 +466,108 @@ async function confirmAndStartInstall() {
   }
 }
 
+let currentStageNum = 0;
+
+function resetStagePills() {
+  currentStageNum = 0;
+  for (let i = 1; i <= 6; i++) {
+    const pill = document.getElementById(`stage-pill-${i}`);
+    if (pill) {
+      pill.classList.remove("active", "done", "error");
+    }
+  }
+}
+
+function setStagePillActive(stageNum) {
+  currentStageNum = stageNum;
+  for (let i = 1; i <= 6; i++) {
+    const pill = document.getElementById(`stage-pill-${i}`);
+    if (!pill) continue;
+    pill.classList.remove("error");
+    if (i < stageNum) {
+      pill.classList.remove("active");
+      pill.classList.add("done");
+    } else if (i === stageNum) {
+      pill.classList.remove("done");
+      pill.classList.add("active");
+    } else {
+      pill.classList.remove("active", "done");
+    }
+  }
+}
+
+function setStagePillDone(stageNum) {
+  const pill = document.getElementById(`stage-pill-${stageNum}`);
+  if (pill) {
+    pill.classList.remove("active", "error");
+    pill.classList.add("done");
+  }
+}
+
+function setStagePillError() {
+  const target = currentStageNum > 0 ? currentStageNum : 1;
+  const pill = document.getElementById(`stage-pill-${target}`);
+  if (pill) {
+    pill.classList.remove("active", "done");
+    pill.classList.add("error");
+  }
+}
+
 function switchToProgressView() {
   document.getElementById("form-card").style.display = "none";
   document.getElementById("progress-card").style.display = "flex";
+  const errBox = document.getElementById("error-diagnosis-box");
+  if (errBox) errBox.style.display = "none";
+
+  const badge = document.getElementById("terminal-status-badge");
+  if (badge) {
+    badge.textContent = "ACTIF";
+    badge.style.borderColor = "var(--green)";
+    badge.style.color = "var(--green)";
+    badge.style.background = "rgba(166, 227, 161, 0.15)";
+  }
+  const titleEl = document.getElementById("current-step-title");
+  if (titleEl) {
+    titleEl.textContent = "Installation en cours...";
+    titleEl.style.color = "var(--text)";
+  }
+
+  resetStagePills();
+  const terminal = document.getElementById("terminal-body");
+  if (terminal) {
+    terminal.innerHTML = '<div class="term-line term-system">--- Initialisation du flux de logs SSE ---</div>';
+  }
+
   connectLogsStream();
   startStatusPolling();
 }
 
-function connectLogsStream() {
+async function connectLogsStream() {
   if (sseSource) sseSource.close();
 
-  const terminal = document.getElementById("terminal-body");
+  const seenLines = new Set();
+
+  // Précharger les logs déjà émis côté serveur pour éviter toute ligne manquée
+  try {
+    const res = await fetch("/api/logs");
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.logs)) {
+        data.logs.forEach((l) => {
+          seenLines.add(l);
+          appendTerminalLine(l);
+        });
+      }
+    }
+  } catch {}
+
   sseSource = new EventSource("/api/install/stream");
 
   sseSource.onmessage = (event) => {
+    if (seenLines.has(event.data)) {
+      seenLines.delete(event.data);
+      return;
+    }
     appendTerminalLine(event.data);
   };
 
@@ -490,25 +578,50 @@ function connectLogsStream() {
 
 function appendTerminalLine(text) {
   const terminal = document.getElementById("terminal-body");
+  if (!terminal) return;
   const line = document.createElement("div");
   line.className = "term-line";
 
+  const stageMatch = text.match(/\[ÉTAPE\s+(\d+)\/6\]/);
+  if (stageMatch) {
+    setStagePillActive(parseInt(stageMatch[1], 10));
+  }
+  const stageDoneMatch = text.match(/\[ÉTAPE\s+(\d+)\/6\s+VALIDÉE\]/);
+  if (stageDoneMatch) {
+    setStagePillDone(parseInt(stageDoneMatch[1], 10));
+  }
+
   if (text.startsWith("[PROGRESS]")) {
     line.className += " term-progress";
-    // Mettre à jour la jauge
     const match = text.match(/\[PROGRESS\]\s+(\d+)%\s+-\s+(.+)/);
     if (match) {
       const perc = parseInt(match[1], 10);
       const stepText = match[2];
       updateProgressBar(perc, stepText);
     }
+  } else if (text.startsWith("━━━") || text.includes("🔷 [ÉTAPE")) {
+    line.className += " term-stage-banner";
+  } else if (text.includes("✅ [ÉTAPE")) {
+    line.className += " term-stage-valid";
+  } else if (text.includes("🛡️ [SÉCURITÉ]")) {
+    line.className += " term-safety";
+  } else if (text.startsWith("[DIAG]")) {
+    line.className += " term-diag";
   } else if (text.startsWith("[STDERR]")) {
     line.className += " term-stderr";
-  } else if (text.includes("❌") || text.includes("ÉCHEC") || text.includes("Erreur")) {
+  } else if (
+    text.includes("💥") ||
+    text.includes("❌") ||
+    text.includes("ÉCHEC") ||
+    text.startsWith("🔍 Cause probable") ||
+    text.startsWith("🔧 Détail technique")
+  ) {
     line.className += " term-error";
-  } else if (text.includes("🎉") || text.includes("succès") || text.includes("Félicitations")) {
+  } else if (text.startsWith("💡 Action recommandée") || text.includes("⚠️")) {
+    line.className += " term-warning";
+  } else if (text.includes("🎉") || text.includes("Félicitations")) {
     line.className += " term-success";
-  } else if (text.startsWith("🚀") || text.startsWith("---")) {
+  } else if (text.startsWith("🚀") || text.startsWith("📋") || text.startsWith("---")) {
     line.className += " term-system";
   }
 
@@ -522,7 +635,51 @@ function updateProgressBar(percentage, stepDesc) {
   document.getElementById("progress-perc-text").textContent = `${percentage}%`;
   if (stepDesc) {
     document.getElementById("current-step-desc").textContent = stepDesc;
+    const stepStage = stepDesc.match(/Étape\s+(\d+)\/6/);
+    if (stepStage) {
+      setStagePillActive(parseInt(stepStage[1], 10));
+    }
   }
+}
+
+function renderErrorDiagnosis(errorText) {
+  setStagePillError();
+  const badge = document.getElementById("terminal-status-badge");
+  if (badge) {
+    badge.textContent = "ERREUR";
+    badge.style.borderColor = "var(--red)";
+    badge.style.color = "var(--red)";
+    badge.style.background = "rgba(243, 139, 168, 0.15)";
+  }
+  const titleEl = document.getElementById("current-step-title");
+  if (titleEl) {
+    titleEl.textContent = "Installation interrompue";
+    titleEl.style.color = "var(--red)";
+  }
+
+  const errBox = document.getElementById("error-diagnosis-box");
+  if (!errBox) return;
+
+  let summary = "Échec lors de l'installation";
+  let explanation = errorText || "Une erreur est survenue pendant l'exécution.";
+  let suggestion = "Consultez le terminal ci-dessous pour plus de détails.";
+
+  if (errorText && errorText.includes(" — ")) {
+    const [firstPart, rest] = errorText.split(" — ", 2);
+    summary = firstPart;
+    if (rest && rest.includes(" Solution : ")) {
+      const [expPart, sugPart] = rest.split(" Solution : ", 2);
+      explanation = expPart;
+      suggestion = "💡 Solution recommandée : " + sugPart;
+    } else {
+      explanation = rest;
+    }
+  }
+
+  document.getElementById("error-diag-summary").textContent = summary;
+  document.getElementById("error-diag-explanation").textContent = explanation;
+  document.getElementById("error-diag-suggestion").textContent = suggestion;
+  errBox.style.display = "flex";
 }
 
 function startStatusPolling() {
@@ -539,9 +696,7 @@ function startStatusPolling() {
           showSuccessScreen();
         } else if (data.status === "error") {
           clearInterval(pollTimer);
-          document.getElementById("terminal-status-badge").textContent = "ERREUR";
-          document.getElementById("terminal-status-badge").style.borderColor = "var(--red)";
-          document.getElementById("terminal-status-badge").style.color = "var(--red)";
+          renderErrorDiagnosis(data.error);
         }
       }
     } catch (err) {
@@ -557,11 +712,51 @@ async function checkCurrentStatus() {
       const data = await res.json();
       if (data.status === "running") {
         switchToProgressView();
+      } else if (data.status === "error") {
+        switchToProgressView();
+        renderErrorDiagnosis(data.error);
       } else if (data.status === "success") {
         showSuccessScreen();
       }
     }
   } catch {}
+}
+
+async function copyInstallLogs() {
+  const terminal = document.getElementById("terminal-body");
+  if (!terminal) return;
+  const lines = Array.from(terminal.querySelectorAll(".term-line")).map((el) => el.textContent);
+  const fullText = lines.join("\n");
+  try {
+    await navigator.clipboard.writeText(fullText);
+    const btn = document.getElementById("btn-copy-logs");
+    if (btn) {
+      const old = btn.textContent;
+      btn.textContent = "✅ Copié !";
+      setTimeout(() => {
+        btn.textContent = old;
+      }, 2000);
+    }
+  } catch {
+    alert("Impossible de copier automatiquement. Sélectionnez le texte dans le terminal avec la souris.");
+  }
+}
+
+async function resetAndReturnToForm() {
+  if (pollTimer) clearInterval(pollTimer);
+  if (sseSource) sseSource.close();
+  try {
+    await fetch("/api/reset", { method: "POST" });
+  } catch {}
+
+  document.getElementById("progress-card").style.display = "none";
+  document.getElementById("form-card").style.display = "flex";
+  const btn = document.getElementById("btn-start-install");
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = "🚀 Démarrer l'Installation de Noos NAS";
+  }
+  loadDisks();
 }
 
 function showSuccessScreen() {
@@ -573,7 +768,6 @@ function showSuccessScreen() {
     urlPreview.textContent = `http://${currentIp}:9339`;
   }
 
-  // Lancer le compte à rebours de 15 secondes
   let seconds = 15;
   const cdElement = document.getElementById("reboot-countdown");
   if (countdownTimer) clearInterval(countdownTimer);
@@ -607,3 +801,4 @@ function dismissUpdateModal() {
     setTimeout(() => { modal.style.display = "none"; }, 300);
   }
 }
+
