@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version du tag (ex: v0.2.6)"
+        description: "Version du tag (ex: v0.2.7)"
         required: true
-        default: "v0.2.6"
+        default: "v0.2.7"
 
 permissions:
   contents: write
@@ -65,7 +65,7 @@ jobs:
             Image ISO minimale bootable pour l'installation automatisée de **Noos NAS Edition**.
 
             ### 📋 Nouveautés & Correctifs :
-            - 🔌 **Compatibilité Rufus Windows (mode Image ISO FAT32/exFAT/NTFS & mode DD)** : ajout des pilotes noyau `vfat`, `fat`, `nls_cp437`, `nls_iso8859_1`, `exfat`, `ntfs3` dans l'`initrd` (corrige `Failed to mount /sysroot/iso` au boot USB)
+            - 🔌 **Compatibilité Rufus Windows (mode Image ISO FAT32/exFAT/NTFS & mode DD)** : surcharge `fsType = "auto"` sur `/iso` (contournant le `fsType = "iso9660"` codé en dur par NixOS 26.05) et service systemd stage-1 `find-noos-iso` qui détecte automatiquement la partition contenant `/nix-store.squashfs` et monte `/sysroot/iso` sans délai de 90s
             - 📐 **Partitionnement GPT 100 % sans espace non alloué** : la partition `BOOT` (`pno=1`, 1 Gio) démarre toujours au secteur `2048` (1 Mio) et `ROOT` (`pno=2`) occupe l'intégralité du reste du disque
             - 🌲 **Sous-volume Btrfs `@` par défaut** : définition automatique de `@` comme sous-volume par défaut de la partition racine Btrfs (`btrfs subvolume set-default /mnt/@`)
             - 🔧 **Synchronisation forcée des partitions noyau (`BLKPG` / `partx` / `resizepart` / `addpart`)** et démontage synchrone avant `wipefs` / `sgdisk`

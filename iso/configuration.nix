@@ -45,22 +45,163 @@ in
   isoImage.makeUsbBootable = true;
   boot.zfs.forceImportRoot = false;
 
-  # Compatibilité Rufus (mode ISO FAT32/NTFS/exFAT + mode DD ISO9660) & contrôleurs USB au stage-1 (initrd)
-  # Sans vfat + nls_cp437 + nls_iso8859_1 dans l'initrd, une clé flashée par Rufus en mode "Image ISO"
-  # (qui reformate la clé en FAT32/exFAT/NTFS avec le label NOOS_NAS) échoue avec "Failed to mount /sysroot/iso".
-  boot.initrd.supportedFilesystems = [ "vfat" "exfat" "ntfs" "iso9660" ];
+  # =========================================================================
+  # 🔧 COMPATIBILITÉ BOOT USB UNIVERSELLE (Rufus ISO FAT32/exFAT/NTFS & DD ISO9660)
+  # =========================================================================
+  # En NixOS 26.05 (commit nixpkgs f8ed5f30), `iso-image.nix` force `fsType = "iso9660"`
+  # sur `/iso` via `lib.mkImageMediaOverride`. Lorsqu'une clé USB est préparée avec Rufus
+  # sous Windows en mode "Image ISO", Rufus crée une table MBR/GPT et formate la partition
+  # en FAT32 (`vfat`), exFAT ou NTFS : `mount -t iso9660` échoue alors systématiquement avec
+  # "Failed to mount /sysroot/iso" et "Dependency failed for Copy ISO contents to RAM".
+  # De plus, si la clé avait précédemment été flashée en mode DD/Etcher, un ancien superbloc
+  # ISO9660 résiduel à l'offset 0x8000 du disque entier (`/dev/sdX`) peut entrer en conflit
+  # avec la nouvelle partition FAT32 (`/dev/sdX1`) lors de la détection udev par label.
+  fileSystems = lib.mkImageMediaOverride {
+    "/iso" = lib.mkImageMediaOverride {
+      fsType = lib.mkForce "auto";
+    };
+  };
+
   boot.initrd.availableKernelModules = [
-    "vfat" "fat" "nls_cp437" "nls_iso8859_1" "exfat" "ntfs3"
+    "vfat" "fat" "nls_cp437" "nls_iso8859-1" "exfat" "ntfs3"
     "iso9660" "squashfs" "loop" "overlay"
-    "uas" "usb_storage" "sd_mod" "sr_mod"
-    "xhci_pci" "xhci_hcd" "ehci_pci" "ehci_hcd" "ohci_pci" "uhci_hcd"
+    "usb_storage" "sd_mod" "sr_mod"
+    "xhci_pci" "ehci_pci" "ohci_pci" "uhci_hcd"
     "nvme" "ahci" "mmc_block" "rtsx_pci_sdmmc" "rtsx_usb_sdmmc"
   ];
-  boot.initrd.kernelModules = [
-    "vfat" "fat" "nls_cp437" "nls_iso8859_1"
-    "iso9660" "squashfs" "loop"
-    "usb_storage" "uas" "sd_mod" "sr_mod"
-  ];
+
+  boot.initrd.systemd.contents."/etc/filesystems".text = ''
+    vfat
+    iso9660
+    exfat
+    ntfs3
+  '';
+
+  boot.initrd.systemd.services.find-noos-iso = {
+    description = "Detect and configure Noos NAS installer medium (FAT32 / exFAT / NTFS / ISO9660)";
+    wantedBy = [ "initrd.target" ];
+    before = [
+      "sysroot-iso.mount"
+      "copytoram.service"
+      "initrd-switch-root.target"
+    ];
+    after = [
+      "systemd-udevd.service"
+      "systemd-modules-load.service"
+      "sysroot.mount"
+    ];
+    unitConfig = {
+      DefaultDependencies = false;
+      RequiresMountsFor = "/sysroot";
+    };
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    path = [
+      pkgs.coreutils
+      config.boot.initrd.systemd.package
+      config.boot.initrd.systemd.package.util-linux
+      config.boot.initrd.systemd.package.kmod
+    ];
+    script = ''
+      set +e
+      for mod in vfat fat nls_cp437 nls_iso8859-1 exfat ntfs3 iso9660 squashfs loop usb_storage sd_mod sr_mod; do
+        modprobe "$mod" 2>/dev/null || true
+      done
+
+      mkdir -p /tmp-iso-probe
+      found_dev=""
+      found_fstype=""
+
+      for attempt in $(seq 1 15); do
+        udevadm settle --timeout=3 2>/dev/null || true
+
+        # Tester les partitions (/dev/sdX1, /dev/nvme0n1p1...) EN PREMIER avant les disques
+        # entiers (/dev/sdX, /dev/sr0) pour éviter tout faux positif sur un ancien superbloc
+        # ISO9660 résiduel à l'offset 32768 d'une clé reformatée en FAT32 par Rufus.
+        candidates=""
+        for sysdev in /sys/class/block/*; do
+          [ -e "$sysdev" ] || continue
+          devname=$(basename "$sysdev")
+          case "$devname" in
+            loop*|ram*|dm-*|md*|zram*) continue ;;
+          esac
+          if [ -f "$sysdev/partition" ]; then
+            candidates="$candidates /dev/$devname"
+          fi
+        done
+        for sysdev in /sys/class/block/*; do
+          [ -e "$sysdev" ] || continue
+          devname=$(basename "$sysdev")
+          case "$devname" in
+            loop*|ram*|dm-*|md*|zram*) continue ;;
+          esac
+          if [ ! -f "$sysdev/partition" ]; then
+            candidates="$candidates /dev/$devname"
+          fi
+        done
+
+        for dev in $candidates; do
+          [ -b "$dev" ] || continue
+          for fstype in vfat iso9660 exfat ntfs3 auto; do
+            if mount -t "$fstype" -o ro "$dev" /tmp-iso-probe 2>/dev/null; then
+              if [ -f /tmp-iso-probe/nix-store.squashfs ]; then
+                found_dev="$dev"
+                if [ "$fstype" = "auto" ]; then
+                  found_fstype=$(findmnt -n -o FSTYPE --target /tmp-iso-probe 2>/dev/null || echo "auto")
+                else
+                  found_fstype="$fstype"
+                fi
+                umount /tmp-iso-probe 2>/dev/null || true
+                break 3
+              fi
+              umount /tmp-iso-probe 2>/dev/null || true
+            fi
+          done
+        done
+
+        sleep 1
+      done
+      rmdir /tmp-iso-probe 2>/dev/null || true
+
+      if [ -n "$found_dev" ]; then
+        dev_base=$(basename "$found_dev")
+        echo "[noos-iso] Support d'installation Noos detecte sur $found_dev (type: $found_fstype)"
+
+        # 1. Forcer le lien udev /dev/disk/by-label/NOOS_NAS vers la bonne partition
+        #    et retirer le label d'un éventuel disque parent contenant un ancien header ISO9660
+        mkdir -p /run/udev/rules.d /dev/disk/by-label
+        cat > /run/udev/rules.d/61-noos-iso-label.rules <<EOF
+ACTION!="remove", SUBSYSTEM=="block", KERNEL!="$dev_base", ENV{ID_FS_LABEL_ENC}=="NOOS_NAS", SYMLINK=""
+ACTION!="remove", SUBSYSTEM=="block", KERNEL=="$dev_base", ENV{ID_FS_USAGE}="filesystem", ENV{ID_FS_LABEL}="NOOS_NAS", ENV{ID_FS_LABEL_ENC}="NOOS_NAS", SYMLINK+="disk/by-label/NOOS_NAS", TAG+="systemd"
+EOF
+        ln -sf "../../$dev_base" /dev/disk/by-label/NOOS_NAS
+        udevadm control --reload 2>/dev/null || true
+        udevadm trigger --action=change --subsystem-match=block 2>/dev/null || true
+        udevadm settle --timeout=5 2>/dev/null || true
+        ln -sf "../../$dev_base" /dev/disk/by-label/NOOS_NAS
+
+        # 2. Surcharger dynamiquement sysroot-iso.mount avec le périphérique et le fstype exacts
+        mkdir -p /run/systemd/system/sysroot-iso.mount.d
+        cat > /run/systemd/system/sysroot-iso.mount.d/override.conf <<EOF
+[Mount]
+What=$found_dev
+Type=$found_fstype
+EOF
+        systemctl daemon-reload 2>/dev/null || true
+
+        # 3. Monter directement /sysroot/iso pour satisfaire immédiatement sysroot-iso.mount
+        mkdir -p /sysroot/iso
+        if ! mountpoint -q /sysroot/iso 2>/dev/null; then
+          mount -t "$found_fstype" -o ro "$found_dev" /sysroot/iso 2>/dev/null || true
+        fi
+      else
+        echo "[noos-iso] Attention: aucun périphérique contenant /nix-store.squashfs n'a été trouvé"
+      fi
+      exit 0
+    '';
+  };
 
   # Empêcher l'extinction / mise en veille de l'écran console (DPMS & consoleblank)
   boot.kernelParams = [ "consoleblank=0" ];
