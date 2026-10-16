@@ -50,6 +50,23 @@ in
   isoImage.makeUsbBootable = true;
   boot.zfs.forceImportRoot = false;
 
+  # Compatibilité Rufus (mode ISO FAT32/NTFS/exFAT + mode DD ISO9660) & contrôleurs USB au stage-1 (initrd)
+  # Sans vfat + nls_cp437 + nls_iso8859_1 dans l'initrd, une clé flashée par Rufus en mode "Image ISO"
+  # (qui reformate la clé en FAT32/exFAT/NTFS avec le label NOOS_NAS) échoue avec "Failed to mount /sysroot/iso".
+  boot.initrd.supportedFilesystems = [ "vfat" "exfat" "ntfs" "iso9660" ];
+  boot.initrd.availableKernelModules = [
+    "vfat" "fat" "nls_cp437" "nls_iso8859_1" "exfat" "ntfs3"
+    "iso9660" "squashfs" "loop" "overlay"
+    "uas" "usb_storage" "sd_mod" "sr_mod"
+    "xhci_pci" "xhci_hcd" "ehci_pci" "ehci_hcd" "ohci_pci" "uhci_hcd"
+    "nvme" "ahci" "mmc_block" "rtsx_pci_sdmmc" "rtsx_usb_sdmmc"
+  ];
+  boot.initrd.kernelModules = [
+    "vfat" "fat" "nls_cp437" "nls_iso8859_1"
+    "iso9660" "squashfs" "loop"
+    "usb_storage" "uas" "sd_mod" "sr_mod"
+  ];
+
   # Empêcher l'extinction / mise en veille de l'écran console (DPMS & consoleblank)
   boot.kernelParams = [ "consoleblank=0" ];
 

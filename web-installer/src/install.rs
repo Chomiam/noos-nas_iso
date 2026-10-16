@@ -197,7 +197,10 @@ pub fn validate_hostname(hostname: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// Calcule l'emplacement optimal et sans chevauchement des partitions BOOT et ROOT
+/// Calcule l'emplacement optimal et sans chevauchement des partitions BOOT et ROOT.
+/// Garantit que la partition BOOT (pno=1, 1024 Mio) démarre toujours au secteur 2048 (1 Mio)
+/// et que la partition ROOT (pno=2) occupe immédiatement tout le reste du disque jusqu'à la fin
+/// alignée, sans jamais laisser d'espace non alloué en début ou milieu de disque.
 pub fn compute_partition_layout(
     total_sectors: u64,
     logical_block_size: u64,
@@ -221,117 +224,15 @@ pub fn compute_partition_layout(
         ));
     }
 
-    let align_up_2048 = |v: u64| -> u64 { ((v + 2047) / 2048) * 2048 };
-    let align_down_2048 = |v: u64| -> u64 { (v / 2048) * 2048 };
-
-    let boot_pno: i32;
-    let boot_start: u64;
+    let boot_pno: i32 = 1;
+    let boot_start: u64 = 2048;
     let boot_sectors: u64 = boot_size_sectors;
-    let root_pno: i32;
-    let root_start: u64;
-    let root_sectors: u64;
-    let mut reused_p1 = false;
-
-    if surviving.is_empty() {
-        boot_pno = 1;
-        boot_start = 2048;
-        root_pno = 2;
-        root_start = 2048 + boot_size_sectors;
-        root_sectors = usable_end - root_start;
-    } else {
-        let p1_reusable = surviving.iter().find(|sp| sp.pno == 1).and_then(|sp1| {
-            if sp1.start_sect >= 34
-                && sp1.start_sect <= 4_194_304
-                && (sp1.start_sect % sectors_per_lba == 0)
-                && surviving.iter().all(|other| {
-                    other.pno == 1
-                        || other.start_sect >= sp1.start_sect + boot_size_sectors
-                        || other.start_sect + other.size_sect <= sp1.start_sect
-                })
-            {
-                Some(sp1.start_sect)
-            } else {
-                None
-            }
-        });
-
-        if let Some(s1) = p1_reusable {
-            reused_p1 = true;
-            boot_pno = 1;
-            boot_start = s1;
-
-            let search_start = align_up_2048(boot_start + boot_sectors);
-            let mut obstacles: Vec<(u64, u64)> = surviving
-                .iter()
-                .filter(|sp| {
-                    sp.pno != 1
-                        && sp.start_sect + sp.size_sect > search_start
-                        && sp.start_sect < usable_end
-                })
-                .map(|sp| (sp.start_sect, sp.start_sect + sp.size_sect))
-                .collect();
-            obstacles.sort_by_key(|o| o.0);
-
-            let mut best_start = search_start;
-            let mut best_end = usable_end;
-            let mut best_len = 0u64;
-            let mut cur = search_start;
-            for (obs_s, obs_e) in &obstacles {
-                let seg_e = align_down_2048(*obs_s);
-                if seg_e > cur && seg_e - cur > best_len {
-                    best_start = cur;
-                    best_end = seg_e;
-                    best_len = seg_e - cur;
-                }
-                cur = align_up_2048(*obs_e);
-            }
-            if usable_end > cur && usable_end - cur > best_len {
-                best_start = cur;
-                best_end = usable_end;
-            }
-
-            root_start = best_start;
-            root_sectors = best_end.saturating_sub(best_start);
-            root_pno = (2..=128)
-                .find(|cand| !surviving.iter().any(|sp| sp.pno == *cand))
-                .unwrap_or(2);
-        } else {
-            let mut obstacles: Vec<(u64, u64)> = surviving
-                .iter()
-                .filter(|sp| sp.start_sect + sp.size_sect > 2048 && sp.start_sect < usable_end)
-                .map(|sp| (sp.start_sect, sp.start_sect + sp.size_sect))
-                .collect();
-            obstacles.sort_by_key(|o| o.0);
-
-            let mut best_start = 2048u64;
-            let mut best_end = usable_end;
-            let mut best_len = 0u64;
-            let mut cur = 2048u64;
-            for (obs_s, obs_e) in &obstacles {
-                let seg_e = align_down_2048(*obs_s);
-                if seg_e > cur && seg_e - cur > best_len {
-                    best_start = cur;
-                    best_end = seg_e;
-                    best_len = seg_e - cur;
-                }
-                cur = align_up_2048(*obs_e);
-            }
-            if usable_end > cur && usable_end - cur > best_len {
-                best_start = cur;
-                best_end = usable_end;
-            }
-
-            boot_start = best_start;
-            root_start = best_start + boot_sectors;
-            root_sectors = best_end.saturating_sub(root_start);
-            boot_pno = (1..=128)
-                .find(|cand| !surviving.iter().any(|sp| sp.pno == *cand))
-                .unwrap_or(1);
-            root_pno = ((boot_pno + 1)..=128)
-                .find(|cand| !surviving.iter().any(|sp| sp.pno == *cand))
-                .unwrap_or(2);
-        }
-    }
+    let root_pno: i32 = 2;
+    let root_start: u64 = boot_start + boot_sectors;
+    let root_sectors: u64 = usable_end.saturating_sub(root_start);
+    let reused_p1: bool = surviving
+        .iter()
+        .any(|sp| sp.pno == 1 && sp.start_sect == boot_start);
 
     if root_sectors < min_root_sectors {
         return Err(format!(
@@ -1252,11 +1153,74 @@ pub async fn run_installation(
         }
     }
 
-    let _ = Command::new("umount").args(["-R", "-l", "/mnt"]).status().await;
+    let my_pid = std::process::id();
+
+    // 2.0 Terminer tout processus tiers ayant un fichier ouvert, cwd, root ou mmap dans /mnt ou sur /dev/<base_name>*
+    let _ = Command::new("fuser").args(["-k", "-9", "-m", "/mnt"]).status().await;
+    if let Ok(proc_entries) = std::fs::read_dir("/proc") {
+        for proc_entry in proc_entries.flatten() {
+            if let Ok(pid) = proc_entry.file_name().to_string_lossy().parse::<u32>() {
+                if pid <= 1 || pid == my_pid {
+                    continue;
+                }
+                let mut holds_mnt_or_disk = false;
+                for link_name in ["cwd", "root", "exe"] {
+                    if let Ok(target) = std::fs::read_link(format!("/proc/{}/{}", pid, link_name)) {
+                        let t = target.to_string_lossy();
+                        if t == "/mnt" || t.starts_with("/mnt/") {
+                            holds_mnt_or_disk = true;
+                            break;
+                        }
+                    }
+                }
+                if !holds_mnt_or_disk {
+                    if let Ok(fds) = std::fs::read_dir(format!("/proc/{}/fd", pid)) {
+                        for fd in fds.flatten() {
+                            if let Ok(target) = std::fs::read_link(fd.path()) {
+                                let t = target.to_string_lossy();
+                                if t == "/mnt"
+                                    || t.starts_with("/mnt/")
+                                    || t.starts_with(&format!("/dev/{}", base_name))
+                                {
+                                    holds_mnt_or_disk = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if holds_mnt_or_disk {
+                    let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid))
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string();
+                    let status_str = std::fs::read_to_string(format!("/proc/{}/status", pid))
+                        .unwrap_or_default();
+                    let is_root_udevd = comm.contains("udevd")
+                        && status_str.lines().any(|l| l.starts_with("PPid:\t1"));
+                    if !is_root_udevd && !comm.contains("noos") {
+                        let _ = Command::new("kill").args(["-9", &pid.to_string()]).status().await;
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = Command::new("sync").status().await;
+    // Démontage synchrone d'abord (libère immédiatement le superbloc Btrfs/Ext4), puis repli sur -f / -l
+    if Command::new("umount")
+        .args(["-R", "/mnt"])
+        .status()
+        .await
+        .map(|s| !s.success())
+        .unwrap_or(true)
+    {
+        let _ = Command::new("umount").args(["-R", "-f", "/mnt"]).status().await;
+        let _ = Command::new("umount").args(["-R", "-l", "/mnt"]).status().await;
+    }
     let _ = Command::new("swapoff").arg("-a").status().await;
 
     // 2.1 Démontage dans TOUS les namespaces de montage (/proc/[0-9]*/mountinfo)
-    let my_pid = std::process::id();
     if let Ok(proc_entries) = std::fs::read_dir("/proc") {
         for proc_entry in proc_entries.flatten() {
             if let Ok(pid) = proc_entry.file_name().to_string_lossy().parse::<u32>() {
@@ -1306,9 +1270,21 @@ pub async fn run_installation(
                     for mp in mounts_to_umount {
                         if pid == 1 || pid == my_pid {
                             log(&manager, &format!("[DIAG] Démontage de {}...", mp)).await;
-                            let _ = Command::new("umount").args(["-R", "-l", &mp]).status().await;
-                            let _ = Command::new("umount").args(["-f", &mp]).status().await;
+                            if Command::new("umount")
+                                .args(["-R", &mp])
+                                .status()
+                                .await
+                                .map(|s| !s.success())
+                                .unwrap_or(true)
+                            {
+                                let _ = Command::new("umount").args(["-f", &mp]).status().await;
+                                let _ = Command::new("umount").args(["-R", "-l", &mp]).status().await;
+                            }
                         } else {
+                            let _ = Command::new("nsenter")
+                                .args(["-t", &pid.to_string(), "-m", "umount", "-R", &mp])
+                                .status()
+                                .await;
                             let _ = Command::new("nsenter")
                                 .args(["-t", &pid.to_string(), "-m", "umount", "-R", "-l", &mp])
                                 .status()
@@ -1319,6 +1295,8 @@ pub async fn run_installation(
             }
         }
     }
+
+    let _ = Command::new("sync").status().await;
 
     // 2.2 Désactivation des swaps (via /proc/swaps et appel système swapoff direct)
     if let Ok(swaps_content) = std::fs::read_to_string("/proc/swaps") {
@@ -1358,6 +1336,7 @@ pub async fn run_installation(
                     {
                         let loop_dev = format!("/dev/{}", l_name);
                         log(&manager, &format!("[DIAG] Détachement de {} ({})...", loop_dev, b_trim)).await;
+                        let _ = Command::new("umount").args(["-R", &loop_dev]).status().await;
                         let _ = Command::new("umount").args(["-R", "-l", &loop_dev]).status().await;
                         if let Ok(lf) = std::fs::OpenOptions::new().read(true).open(&loop_dev) {
                             unsafe {
@@ -1397,6 +1376,7 @@ pub async fn run_installation(
     for h_name in &all_holders {
         let h_dev = format!("/dev/{}", h_name);
         log(&manager, &format!("[DIAG] Libération du holder noyau {}...", h_dev)).await;
+        let _ = Command::new("umount").args(["-R", &h_dev]).status().await;
         let _ = Command::new("umount").args(["-R", "-l", &h_dev]).status().await;
         let _ = Command::new("swapoff").arg(&h_dev).status().await;
         if h_name.starts_with("dm-") {
@@ -1413,68 +1393,16 @@ pub async fn run_installation(
         }
     }
 
+    // 2.5 Suspendre la file d'exécution udev AVANT wipefs pour empêcher udevd/blkid de rouvrir les partitions
     let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
+    let _ = Command::new("udevadm").args(["control", "--stop-exec-queue"]).status().await;
 
-    // 2.5 Terminer tout processus tiers maintenant un descripteur ouvert sur /dev/<base_name>*
-    if let Ok(proc_entries) = std::fs::read_dir("/proc") {
-        for proc_entry in proc_entries.flatten() {
-            if let Ok(pid) = proc_entry.file_name().to_string_lossy().parse::<u32>() {
-                if pid <= 1 || pid == my_pid {
-                    continue;
-                }
-                let fd_dir = format!("/proc/{}/fd", pid);
-                if let Ok(fds) = std::fs::read_dir(&fd_dir) {
-                    let mut held_target = None;
-                    for fd in fds.flatten() {
-                        if let Ok(target) = std::fs::read_link(fd.path()) {
-                            let target_str = target.to_string_lossy().to_string();
-                            if target_str.starts_with(&format!("/dev/{}", base_name)) {
-                                held_target = Some(target_str);
-                                break;
-                            }
-                        }
-                    }
-                    if let Some(target_str) = held_target {
-                        let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid))
-                            .unwrap_or_default()
-                            .trim()
-                            .to_string();
-                        let status_str = std::fs::read_to_string(format!("/proc/{}/status", pid))
-                            .unwrap_or_default();
-                        let is_root_udevd = comm.contains("udevd")
-                            && status_str.lines().any(|l| l.starts_with("PPid:\t1"));
-                        log(
-                            &manager,
-                            &format!(
-                                "[DIAG] Processus {} (PID {}) détient {} ouvert.",
-                                comm, pid, target_str
-                            ),
-                        )
-                        .await;
-                        if !is_root_udevd && !comm.contains("noos") {
-                            let _ = Command::new("kill").args(["-9", &pid.to_string()]).status().await;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 2.6 Effacement des signatures des anciennes partitions et suspension temporaire de la file udev
+    // 2.6 Effacement des signatures des anciennes partitions et suppression dans la table noyau
     for p in &initial_parts {
         let part_dev = format!("/dev/{}", p.name);
         let _ = Command::new("wipefs").args(["-a", "-f", &part_dev]).status().await;
     }
-    let _ = Command::new("udevadm").args(["settle", "--timeout=5"]).status().await;
-    let _ = Command::new("udevadm").args(["control", "--stop-exec-queue"]).status().await;
-
-    for p in &initial_parts {
-        let _ = blkpg_op(&req.disk_path, BLKPG_DEL_PARTITION, p.pno, 0, 0);
-    }
-    for pno in 1..=128 {
-        let _ = blkpg_op(&req.disk_path, BLKPG_DEL_PARTITION, pno, 0, 0);
-    }
-    let _ = blkrrpart_ioctl(&req.disk_path);
+    let _ = Command::new("sync").status().await;
 
     log(&manager, &format!("Effacement des anciennes signatures sur {}...", req.disk_path)).await;
     let mut wipe_cmd = Command::new("wipefs");
@@ -1489,35 +1417,68 @@ pub async fn run_installation(
         log(&manager, &format!("Avertissement sgdisk -Z : {}", diag.technical_detail)).await;
     }
 
-    for pno in 1..=128 {
-        let _ = blkpg_op(&req.disk_path, BLKPG_DEL_PARTITION, pno, 0, 0);
-    }
-    let _ = blkrrpart_ioctl(&req.disk_path);
+    // Boucle de purge des anciennes partitions dans le noyau (avec relâchement des descripteurs transitoires)
+    for _attempt in 1..=10 {
+        let _ = Command::new("sync").status().await;
+        let _ = Command::new("partx").args(["-d", &req.disk_path]).status().await;
+        for p in &initial_parts {
+            let _ = blkpg_op(&req.disk_path, BLKPG_DEL_PARTITION, p.pno, 0, 0);
+        }
+        for pno in 1..=128 {
+            let _ = blkpg_op(&req.disk_path, BLKPG_DEL_PARTITION, pno, 0, 0);
+        }
+        let _ = blkrrpart_ioctl(&req.disk_path);
 
-    // Réduction à chaud des éventuelles partitions survivantes via BLKPG_RESIZE_PARTITION
-    let surviving_before_shrink = list_kernel_partitions(&base_name);
-    if !surviving_before_shrink.is_empty() {
-        for sp in &surviving_before_shrink {
-            log(
-                &manager,
-                &format!(
-                    "[DIAG] Partition maintenue par le noyau : /dev/{} (pno={}, start={}, size={}) -> réduction à chaud via BLKPG_RESIZE_PARTITION...",
-                    sp.name, sp.pno, sp.start_sect, sp.size_sect
-                ),
-            )
-            .await;
-            let min_len = sp.size_sect.min(8).max(1);
-            if let Err(e) = blkpg_op(&req.disk_path, BLKPG_RESIZE_PARTITION, sp.pno, sp.start_sect, min_len) {
-                log(
-                    &manager,
-                    &format!(
-                        "[DIAG] Avertissement BLKPG_RESIZE_PARTITION sur pno={} : {}",
-                        sp.pno, e
-                    ),
-                )
-                .await;
+        let cur_surviving = list_kernel_partitions(&base_name);
+        if cur_surviving.is_empty() {
+            break;
+        }
+
+        // Terminer tout processus tiers maintenant encore un descripteur ouvert sur /dev/<base_name>*
+        if let Ok(proc_entries) = std::fs::read_dir("/proc") {
+            for proc_entry in proc_entries.flatten() {
+                if let Ok(pid) = proc_entry.file_name().to_string_lossy().parse::<u32>() {
+                    if pid <= 1 || pid == my_pid {
+                        continue;
+                    }
+                    let fd_dir = format!("/proc/{}/fd", pid);
+                    if let Ok(fds) = std::fs::read_dir(&fd_dir) {
+                        let mut held_target = None;
+                        for fd in fds.flatten() {
+                            if let Ok(target) = std::fs::read_link(fd.path()) {
+                                let target_str = target.to_string_lossy().to_string();
+                                if target_str.starts_with(&format!("/dev/{}", base_name)) {
+                                    held_target = Some(target_str);
+                                    break;
+                                }
+                            }
+                        }
+                        if let Some(target_str) = held_target {
+                            let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid))
+                                .unwrap_or_default()
+                                .trim()
+                                .to_string();
+                            let status_str = std::fs::read_to_string(format!("/proc/{}/status", pid))
+                                .unwrap_or_default();
+                            let is_root_udevd = comm.contains("udevd")
+                                && status_str.lines().any(|l| l.starts_with("PPid:\t1"));
+                            log(
+                                &manager,
+                                &format!(
+                                    "[DIAG] Processus {} (PID {}) détient {} ouvert.",
+                                    comm, pid, target_str
+                                ),
+                            )
+                            .await;
+                            if !is_root_udevd && !comm.contains("noos") {
+                                let _ = Command::new("kill").args(["-9", &pid.to_string()]).status().await;
+                            }
+                        }
+                    }
+                }
             }
         }
+        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
     }
 
     let surviving = list_kernel_partitions(&base_name);
@@ -1855,6 +1816,34 @@ pub async fn run_installation(
             {
                 fail_install_with_diagnosis(manager, diag).await;
                 return;
+            }
+        }
+
+        // Définir '@' comme sous-volume Btrfs principal par défaut de la partition
+        let set_def_direct = Command::new("btrfs")
+            .args(["subvolume", "set-default", "/mnt/@"])
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !set_def_direct {
+            if let Ok(list_out) = Command::new("btrfs")
+                .args(["subvolume", "list", "/mnt"])
+                .output()
+                .await
+            {
+                let list_str = String::from_utf8_lossy(&list_out.stdout);
+                for line in list_str.lines() {
+                    let cols: Vec<&str> = line.split_whitespace().collect();
+                    if cols.len() >= 9 && cols[0] == "ID" && cols.last() == Some(&"@") {
+                        let sub_id = cols[1];
+                        let _ = Command::new("btrfs")
+                            .args(["subvolume", "set-default", sub_id, "/mnt"])
+                            .status()
+                            .await;
+                        break;
+                    }
+                }
             }
         }
 
@@ -2744,33 +2733,27 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_partition_layout_surviving_p1_and_p2_avoided() {
-        // Si pno=1 est à 2048 et pno=2 est à 1_000_000 (en plein dans les 1024 Mio de boot_p1),
-        // p1 ne peut pas être étendu sur p2 : l'algorithme doit placer boot et root après p2 !
+    fn test_compute_partition_layout_never_leaves_leading_unallocated_gap() {
+        // Même si des partitions résiduelles sont signalées, le partitionnement complet du disque
+        // doit toujours placer BOOT (pno=1) à 2048 et ROOT (pno=2) juste après, sans trou non alloué.
         let surviving = vec![
             KernelPartInfo {
-                name: "sda1".to_string(),
-                pno: 1,
-                start_sect: 2048,
+                name: "sda3".to_string(),
+                pno: 3,
+                start_sect: 6_399_992,
                 size_sect: 8,
-                dev_maj_min: "8:1".to_string(),
-                holders: vec![],
-            },
-            KernelPartInfo {
-                name: "sda2".to_string(),
-                pno: 2,
-                start_sect: 1_000_000,
-                size_sect: 8,
-                dev_maj_min: "8:2".to_string(),
+                dev_maj_min: "8:3".to_string(),
                 holders: vec![],
             },
         ];
-        let layout = compute_partition_layout(41_943_040, 512, &surviving).expect("doit réussir");
+        let layout = compute_partition_layout(488_397_168, 512, &surviving).expect("doit réussir");
         assert!(!layout.reused_p1);
-        assert_eq!(layout.boot_pno, 3);
-        assert_eq!(layout.root_pno, 4);
-        assert!(layout.boot_start > 1_000_000);
-        assert_eq!(layout.root_start, layout.boot_start + layout.boot_sectors);
+        assert_eq!(layout.boot_pno, 1);
+        assert_eq!(layout.boot_start, 2048);
+        assert_eq!(layout.boot_sectors, 2_097_152);
+        assert_eq!(layout.root_pno, 2);
+        assert_eq!(layout.root_start, 2048 + 2_097_152);
+        assert_eq!(layout.root_sectors, 488_394_752 - (2048 + 2_097_152));
     }
 
     #[test]
